@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -32,10 +33,11 @@ func TestSignalOutcomeResponseKeepsNeutralAndUnevaluatedDistinct(t *testing.T) {
 			},
 		},
 	}
-	handler := httpapi.New(logging.New(io.Discard, "error", logging.Options{}), httpapi.Dependencies{
+	handler := newTestHandler(logging.New(io.Discard, "error", logging.Options{}), httpapi.Dependencies{
 		Readiness: readinessStub{}, Analysis: unavailableAnalysis{}, Sessions: roleSessions{}, Strategies: &backtestStrategies{result: result},
 	}, httpapi.Options{})
-	request := httptest.NewRequest(http.MethodGet, "/api/v1/admin/strategies/"+strategyID(1).String()+"/backtest?symbol=BTCUSDT", nil)
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/admin/strategy-backtests", strings.NewReader(`{"strategy":{"kind":"saved","id":"`+strategyID(1).String()+`"},"symbol":"BTCUSDT"}`))
+	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Authorization", "Bearer admin")
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)

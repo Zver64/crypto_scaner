@@ -1,6 +1,6 @@
 import { NativeSelect, NumberInput, Stack, Text } from "@mantine/core";
 
-import { StrategyIndicatorParameterKind } from "@/api/generated/models";
+import { IndicatorParameterKind } from "@/api/generated/models";
 import {
 	canonicalArgument,
 	canonicalNumber,
@@ -57,7 +57,7 @@ export function IndicatorParameters({
 						<Text c="dimmed" size="xs">
 							{parameter.title}
 						</Text>
-						{parameter.kind === StrategyIndicatorParameterKind.source ? (
+						{parameter.kind === IndicatorParameterKind.source ? (
 							<IndicatorSourceInput
 								arg={arg}
 								depth={depth}
@@ -70,7 +70,7 @@ export function IndicatorParameters({
 								sources={sources}
 							/>
 						) : typeof arg !== "string" ? null : parameter.kind ===
-						  StrategyIndicatorParameterKind.choice ? (
+						  IndicatorParameterKind.choice ? (
 							<NativeSelect
 								aria-label={parameter.title}
 								data={choiceSelectData(parameter)}
@@ -82,9 +82,7 @@ export function IndicatorParameters({
 							/>
 						) : (
 							<NumberInput
-								allowDecimal={
-									parameter.kind === StrategyIndicatorParameterKind.real
-								}
+								allowDecimal={parameter.kind === IndicatorParameterKind.real}
 								allowNegative={(parameter.minimum ?? 0) < 0}
 								aria-label={parameter.title}
 								disabled={disabled}

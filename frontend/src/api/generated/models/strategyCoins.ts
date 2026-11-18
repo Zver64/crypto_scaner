@@ -9,6 +9,10 @@
  * `POST /api/v1/auth/session` and send `Authorization: Bearer <token>` to every
  * other operation. A request rejected with `401` needs a new session.
  *
+ * Every response carries an `X-Request-ID` header: the caller's own
+ * `X-Request-ID` when it is a safe value, otherwise one the server assigns.
+ * Error bodies repeat it as `request_id`.
+ *
  * The client offers the WebSocket subprotocol `crypto-scanner.live.v1` followed by
  * its session token as a second subprotocol (`Sec-WebSocket-Protocol`); the token is
  * never placed in the URL. The handshake fails with `401` for a missing or invalid
@@ -21,14 +25,24 @@
  *
  * OpenAPI spec version: 1.0.0
  */
+import type { StrategyCoinSource } from './strategyCoinSource.ts';
+import type { StrategyMarketCapBound } from './strategyMarketCapBound.ts';
 import type { SymbolName } from './symbolName.ts';
 
 /**
- * The coins the enabled strategy or signal evaluates, among all coins,
- * ascending, when `coin_source` is `selected`, which needs at least
- * one; none otherwise. Every coin must be active: a delisted coin,
- * chosen or read through `of`, disables the strategy until it is
- * replaced or removed.
- * @maxItems 2000
+ * The coins a strategy or signal evaluates and, a signal's only, the market caps it announces.
  */
-export type StrategyCoins = SymbolName[];
+export interface StrategyCoins {
+  source: StrategyCoinSource;
+  /**
+     * The coins the enabled strategy or signal evaluates, among all coins,
+     * ascending, when `source` is `selected`, which needs at least
+     * one; none otherwise. Every coin must be active: a delisted coin,
+     * chosen or read through `of`, disables the strategy until it is
+     * replaced or removed.
+     * @maxItems 2000
+     */
+  symbols: SymbolName[];
+  min_market_cap_usd: StrategyMarketCapBound | null;
+  max_market_cap_usd: StrategyMarketCapBound | null;
+}

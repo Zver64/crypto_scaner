@@ -38,14 +38,14 @@ func (f marketCapFlags) parse() (minimum, maximum *float64, err error) {
 	return minimum, maximum, nil
 }
 
-// update replaces the bounds of body whose flags were given with minimum and
-// maximum, as parse read them, preserving the others.
-func (f marketCapFlags) update(flags *pflag.FlagSet, body *apiclient.StrategyUpdate, minimum, maximum *float64) {
+// update replaces the bounds of coins whose flags were given with minimum
+// and maximum, as parse read them, preserving the others.
+func (f marketCapFlags) update(flags *pflag.FlagSet, coins *apiclient.StrategyCoins, minimum, maximum *float64) {
 	if flags.Changed("min-market-cap") {
-		body.MinMarketCapUsd = minimum
+		coins.MinMarketCapUsd = minimum
 	}
 	if flags.Changed("max-market-cap") {
-		body.MaxMarketCapUsd = maximum
+		coins.MaxMarketCapUsd = maximum
 	}
 }
 
@@ -99,8 +99,8 @@ func formatUSD(usd float64) string {
 
 // marketCapRange writes the market cap range of a strategy, "-" without
 // bounds.
-func marketCapRange(strategy apiclient.Strategy) string {
-	switch minimum, maximum := strategy.MinMarketCapUsd, strategy.MaxMarketCapUsd; {
+func marketCapRange(coins apiclient.StrategyCoins) string {
+	switch minimum, maximum := coins.MinMarketCapUsd, coins.MaxMarketCapUsd; {
 	case minimum != nil && maximum != nil:
 		return formatUSD(*minimum) + " – " + formatUSD(*maximum)
 	case minimum != nil:

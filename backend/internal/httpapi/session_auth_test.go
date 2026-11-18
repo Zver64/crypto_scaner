@@ -35,7 +35,7 @@ func newTestSessions(store *memorySessionStore, maxAge time.Duration) *auth.Sess
 }
 
 func newSessionHandler(sessions httpapi.Sessions) http.Handler {
-	return httpapi.New(logging.New(io.Discard, "error", logging.Options{}), httpapi.Dependencies{Readiness: readinessStub{}, Sessions: sessions}, httpapi.Options{})
+	return newTestHandler(logging.New(io.Discard, "error", logging.Options{}), httpapi.Dependencies{Readiness: readinessStub{}, Sessions: sessions}, httpapi.Options{})
 }
 
 func exchange(handler http.Handler, authorization string) *httptest.ResponseRecorder {

@@ -1,4 +1,5 @@
 import type { ExpressionNode } from "@react-querybuilder/expr";
+import equal from "fast-deep-equal";
 import {
 	type Field,
 	formatQuery,
@@ -29,8 +30,10 @@ import {
 	type ErrorResponse,
 	type Strategy,
 	type StrategyCatalog,
+	type StrategyCoins,
 	StrategyCoinSource,
-	type StrategyIndicatorParameter,
+	type IndicatorParameter,
+	type StrategyRules,
 	type StrategyUpdate,
 } from "@/api/generated/models";
 import { chartIntervalOptions } from "@/features/candle-chart/config";
@@ -603,25 +606,27 @@ export function strategyDraft(
 			: strategyQuery(rules.exit_expression);
 	return {
 		id: strategy.id,
-		signal: strategy.signal,
+		signal: strategy.rules.signal,
 		incomplete:
 			strategyQueryDropped(rules.expression, query) ||
 			(exitQuery !== undefined &&
 				strategyQueryDropped(rules.exit_expression, exitQuery)),
 		values: {
 			name: strategy.name,
-			direction: strategy.direction,
+			direction: strategy.rules.direction,
 			message: strategy.message,
 			query,
 			exitQuery,
 			takeProfit: parsePriceSetup(rules.take_profit_expression),
 			stopLoss: parsePriceSetup(rules.stop_loss_expression),
-			coins: strategy.coins,
-			coinSource: strategy.coin_source,
-			minMarketCap: marketCapMillions(strategy.min_market_cap_usd),
-			maxMarketCap: marketCapMillions(strategy.max_market_cap_usd),
-			targetRatio: String(strategy.target_ratio ?? defaultSignalTargetRatio),
-			window: String(strategy.window ?? defaultSignalWindow),
+			coins: strategy.coins.symbols,
+			coinSource: strategy.coins.source,
+			minMarketCap: marketCapMillions(strategy.coins.min_market_cap_usd),
+			maxMarketCap: marketCapMillions(strategy.coins.max_market_cap_usd),
+			targetRatio: String(
+				strategy.rules.target_ratio ?? defaultSignalTargetRatio,
+			),
+			window: String(strategy.rules.window ?? defaultSignalWindow),
 		},
 	};
 }
@@ -648,33 +653,37 @@ export function strategyFormUpdate(
 		? values.coinSource
 		: StrategyCoinSource.CoinSourceSelected;
 	return {
-		coin_source: coinSource,
-		coins:
-			coinSource === StrategyCoinSource.CoinSourceSelected
-				? [...values.coins].sort()
-				: [],
-		exit_expression:
-			!signal && values.exitQuery ? strategyExpression(values.exitQuery) : "",
-		expression: strategyExpression(values.query),
-		max_market_cap_usd: signal ? marketCapUsd(values.maxMarketCap) : null,
+		coins: {
+			source: coinSource,
+			symbols:
+				coinSource === StrategyCoinSource.CoinSourceSelected
+					? [...values.coins].sort()
+					: [],
+			max_market_cap_usd: signal ? marketCapUsd(values.maxMarketCap) : null,
+			min_market_cap_usd: signal ? marketCapUsd(values.minMarketCap) : null,
+		},
 		message: values.message.trim(),
-		min_market_cap_usd: signal ? marketCapUsd(values.minMarketCap) : null,
 		name: values.name.trim(),
-		signal,
-		direction: values.direction,
-		stop_loss_expression: signal ? "" : priceSetupExpression(values.stopLoss),
-		take_profit_expression: signal
-			? ""
-			: priceSetupExpression(values.takeProfit),
-		target_ratio: judged
-			? (signalTargetRatios.find(
-					(ratio) => String(ratio) === values.targetRatio,
-				) ?? null)
-			: null,
-		window: judged
-			? (signalWindows.find((window) => String(window) === values.window) ??
-				null)
-			: null,
+		rules: {
+			signal,
+			direction: values.direction,
+			expression: strategyExpression(values.query),
+			exit_expression:
+				!signal && values.exitQuery ? strategyExpression(values.exitQuery) : "",
+			stop_loss_expression: signal ? "" : priceSetupExpression(values.stopLoss),
+			take_profit_expression: signal
+				? ""
+				: priceSetupExpression(values.takeProfit),
+			target_ratio: judged
+				? (signalTargetRatios.find(
+						(ratio) => String(ratio) === values.targetRatio,
+					) ?? null)
+				: null,
+			window: judged
+				? (signalWindows.find((window) => String(window) === values.window) ??
+					null)
+				: null,
+		},
 	};
 }
 
@@ -687,19 +696,20 @@ export function strategyInput(
 	signal: boolean,
 ): StrategyUpdate | undefined {
 	const update = strategyFormUpdate(values, signal);
+	const { coins, rules } = update;
 	const boundErrors = marketCapErrors(
-		update.min_market_cap_usd,
-		update.max_market_cap_usd,
+		coins.min_market_cap_usd,
+		coins.max_market_cap_usd,
 	);
 	if (
 		update.name === "" ||
-		strategyCoinsError(update.coins, update.coin_source) !== undefined ||
+		strategyCoinsError(coins.symbols, coins.source) !== undefined ||
 		!strategyFormComplete(values, signal) ||
 		boundErrors.minimum ||
 		boundErrors.maximum ||
 		(signal &&
-			update.direction !== Direction.simple &&
-			(update.target_ratio === null || update.window === null))
+			rules.direction !== Direction.simple &&
+			(rules.target_ratio === null || rules.window === null))
 	) {
 		return undefined;
 	}
@@ -738,16 +748,13 @@ export function strategyFormDirty(
 	return (
 		values.name !== initial.name ||
 		values.message !== initial.message ||
-		input.direction !== saved.direction ||
-		input.expression !== saved.expression ||
-		input.coin_source !== saved.coin_source ||
-		input.coins.join() !== saved.coins.join() ||
-		input.min_market_cap_usd !== saved.min_market_cap_usd ||
-		input.max_market_cap_usd !== saved.max_market_cap_usd ||
-		input.target_ratio !== saved.target_ratio ||
-		input.window !== saved.window ||
+		input.rules.direction !== saved.rules.direction ||
+		input.rules.expression !== saved.rules.expression ||
+		!equal(input.coins, saved.coins) ||
+		input.rules.target_ratio !== saved.rules.target_ratio ||
+		input.rules.window !== saved.rules.window ||
 		(!signal &&
-			(input.exit_expression !== saved.exit_expression ||
+			(input.rules.exit_expression !== saved.rules.exit_expression ||
 				priceSetupChanged(values.takeProfit, initial.takeProfit) ||
 				priceSetupChanged(values.stopLoss, initial.stopLoss)))
 	);
@@ -799,13 +806,13 @@ export function marketCapErrors(
 	return errors;
 }
 
-// The market cap range of a strategy, such as "$10M – $1.5B"; undefined
-// without bounds.
+// The market cap range of a strategy's coins, such as "$10M – $1.5B";
+// undefined without bounds.
 export function marketCapRangeLabel(
-	strategy: Pick<Strategy, "max_market_cap_usd" | "min_market_cap_usd">,
+	coins: Pick<StrategyCoins, "max_market_cap_usd" | "min_market_cap_usd">,
 ): string | undefined {
-	const minimum = strategy.min_market_cap_usd;
-	const maximum = strategy.max_market_cap_usd;
+	const minimum = coins.min_market_cap_usd;
+	const maximum = coins.max_market_cap_usd;
 	if (minimum !== null && maximum !== null) {
 		return `${formatMarketCapUsd(minimum)} – ${formatMarketCapUsd(maximum)}`;
 	}
@@ -817,15 +824,15 @@ export function marketCapRangeLabel(
 // Whether a strategy sells, through an exit rule, take profit, or stop loss;
 // such a strategy holds one buy per trade.
 export function strategyExits(
-	strategy: Pick<
-		Strategy,
+	rules: Pick<
+		StrategyRules,
 		"exit_expression" | "stop_loss_expression" | "take_profit_expression"
 	>,
 ): boolean {
 	return (
-		strategy.exit_expression !== "" ||
-		strategy.take_profit_expression !== "" ||
-		strategy.stop_loss_expression !== ""
+		rules.exit_expression !== "" ||
+		rules.take_profit_expression !== "" ||
+		rules.stop_loss_expression !== ""
 	);
 }
 
@@ -833,16 +840,16 @@ export function strategyExits(
 // strategy, once per trade when it exits, or at every entry signal without
 // any exit.
 export function strategyBuysLabel(
-	strategy: Parameters<typeof strategyExits>[0] &
-		Pick<Strategy, "direction" | "signal">,
+	rules: Parameters<typeof strategyExits>[0] &
+		Pick<StrategyRules, "direction" | "signal">,
 ): string {
-	if (strategy.signal) {
-		return `${directionLabels[strategy.direction]} signal, buys nothing`;
+	if (rules.signal) {
+		return `${directionLabels[rules.direction]} signal, buys nothing`;
 	}
-	if (strategy.direction === Direction.short) {
+	if (rules.direction === Direction.short) {
 		return "One short per trade";
 	}
-	return strategyExits(strategy)
+	return strategyExits(rules)
 		? "One buy per trade"
 		: "Buys at every entry signal and never sells";
 }
@@ -913,7 +920,7 @@ export function sourceVariables(
 
 // Select data for the choices of a choice or source parameter, by the
 // argument a call writes for each.
-export function choiceSelectData(parameter: StrategyIndicatorParameter) {
+export function choiceSelectData(parameter: IndicatorParameter) {
 	return (parameter.choices ?? []).map((choice) => ({
 		label: choice.title,
 		value: choiceArgument(parameter, choice),

@@ -31,20 +31,20 @@ export function StrategyFormFooter({
 	const values = strategyFormValues(
 		useSelector(form.store, (state) => state.values),
 	);
-	const input = strategyFormUpdate(values, signal);
+	const { coins, rules } = strategyFormUpdate(values, signal);
 	// Entries on coins outside a set range neither buy nor signal.
 	const withinRange =
-		input.min_market_cap_usd === null && input.max_market_cap_usd === null
+		coins.min_market_cap_usd === null && coins.max_market_cap_usd === null
 			? ""
 			: " on a coin within the market cap range";
 	return (
 		<>
 			<Text c="dimmed" size="xs">
-				{strategyBuysLabel(input)}.{" "}
+				{strategyBuysLabel(rules)}.{" "}
 				{signal
-					? `Every time the entry turns true${withinRange} sends a ${directionLabels[input.direction].toLowerCase()} signal alert.`
-					: strategyExits(input)
-						? `Entry signals during a trade ${input.direction === Direction.short ? "short" : "buy"} nothing.`
+					? `Every time the entry turns true${withinRange} sends a ${directionLabels[rules.direction].toLowerCase()} signal alert.`
+					: strategyExits(rules)
+						? `Entry signals during a trade ${rules.direction === Direction.short ? "short" : "buy"} nothing.`
 						: `Without an exit rule, take profit, or stop loss, every time the entry turns true${withinRange} buys.`}
 			</Text>
 			<Group justify="flex-end">

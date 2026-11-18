@@ -17,6 +17,7 @@ import { ScannerIndicatorScaleFields } from "@/features/scanner-settings/scanner
 import { indicatorTypeSchema } from "@/features/scanner-settings/schemas";
 import type { ScannerIndicatorDraft } from "@/features/scanner-settings/types";
 import {
+	choosesAmongChoices,
 	defaultParameterValues,
 	indicatorGroups,
 	indicatorTypeOptions,
@@ -131,7 +132,7 @@ export function ScannerIndicatorForm({
 							name={`parameters.${parameter.key}`}
 						>
 							{(field) =>
-								parameter.kind === "choice" ? (
+								choosesAmongChoices(parameter) ? (
 									<field.SelectField
 										allowDeselect={false}
 										data={(parameter.choices ?? []).map((choice) => ({
@@ -160,7 +161,7 @@ export function ScannerIndicatorForm({
 								? "Drawn over the candles"
 								: "Drawn in a pane below the candles"}
 							{" · "}
-							Outputs: {type.outputs.join(", ")}
+							Outputs: {type.outputs.map(({ name }) => name).join(", ")}
 						</Text>
 					) : null}
 					<form.Field name="periods">

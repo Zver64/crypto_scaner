@@ -7,10 +7,8 @@ import (
 	"net/http"
 
 	"crypto-scanner/internal/alerts"
-	"crypto-scanner/internal/analysis"
 	"crypto-scanner/internal/favorites"
 	"crypto-scanner/internal/market"
-	"crypto-scanner/internal/markettable"
 )
 
 const invalidTargetMessage = "Target must be a positive decimal"
@@ -34,7 +32,7 @@ func alertDTO(v alerts.Alert) PriceAlert {
 	return PriceAlert{Id: v.ID, Symbol: v.Symbol, Target: v.Target, Version: v.Version, CreatedAt: v.CreatedAt, UpdatedAt: v.UpdatedAt}
 }
 func (api *api) ListFavorites(ctx context.Context, _ ListFavoritesRequestObject) (ListFavoritesResponseObject, error) {
-	items, err := api.favorites.List(ctx, currentUserID(ctx))
+	items, err := api.Favorites.List(ctx, currentUserID(ctx))
 	if err != nil {
 		return ListFavorites500JSONResponse{api.internalError(ctx, "list_favorites", err)}, nil
 	}
@@ -44,38 +42,8 @@ func (api *api) ListFavorites(ctx context.Context, _ ListFavoritesRequestObject)
 	}
 	return ListFavorites200JSONResponse{Items: result}, nil
 }
-func (api *api) AnalyzeFavorites(ctx context.Context, request AnalyzeFavoritesRequestObject) (AnalyzeFavoritesResponseObject, error) {
-	body := MarketAnalysisRequest{}
-	if request.Body != nil {
-		body = *request.Body
-	}
-	result, err := api.analyzeFavorites(ctx, marketSearchRequest(body))
-	if err != nil {
-		mapped, ok := analysisError(ctx, err, "")
-		switch {
-		case ok && mapped.status == http.StatusBadRequest:
-			return AnalyzeFavorites400JSONResponse{mapped.badRequest()}, nil
-		case ok && mapped.status == http.StatusUnprocessableEntity:
-			return AnalyzeFavorites422JSONResponse{mapped.unprocessable()}, nil
-		case ok && mapped.status == http.StatusServiceUnavailable:
-			return AnalyzeFavorites503JSONResponse{mapped.unavailable()}, nil
-		default:
-			return AnalyzeFavorites500JSONResponse{api.internalError(ctx, "analyze_favorites", err)}, nil
-		}
-	}
-	return AnalyzeFavorites200JSONResponse(marketAnalysisResponse(result)), nil
-}
-
-func (api *api) analyzeFavorites(ctx context.Context, request analysis.SearchRequest) (markettable.Result, error) {
-	items, err := api.favorites.List(ctx, currentUserID(ctx))
-	if err != nil {
-		return markettable.Result{}, err
-	}
-	return api.tables.Favorites(ctx, items, request)
-}
-
 func (api *api) AddFavorite(ctx context.Context, request AddFavoriteRequestObject) (AddFavoriteResponseObject, error) {
-	item, err := api.favorites.Add(ctx, currentUserID(ctx), request.Symbol)
+	item, err := api.Favorites.Add(ctx, currentUserID(ctx), request.Symbol)
 	if errors.Is(err, market.ErrInstrumentNotFound) {
 		return AddFavorite404JSONResponse{symbolNotFound(ctx).symbolNotFound()}, nil
 	}
@@ -86,7 +54,7 @@ func (api *api) AddFavorite(ctx context.Context, request AddFavoriteRequestObjec
 }
 func (api *api) RemoveFavorite(ctx context.Context, request RemoveFavoriteRequestObject) (RemoveFavoriteResponseObject, error) {
 	confirm := request.Params.ConfirmAlerts != nil && *request.Params.ConfirmAlerts
-	count, err := api.favorites.Remove(ctx, currentUserID(ctx), request.Symbol, confirm)
+	count, err := api.Favorites.Remove(ctx, currentUserID(ctx), request.Symbol, confirm)
 	if errors.Is(err, favorites.ErrAlertsExist) {
 		return RemoveFavorite409JSONResponse{FavoriteConflictJSONResponse: FavoriteConflictJSONResponse(newAPIError(ctx, http.StatusConflict, "favorite_has_alerts", "Confirmation is required to delete existing alerts", map[string]any{"alert_count": count}).body)}, nil
 	}
@@ -99,7 +67,7 @@ func (api *api) RemoveFavorite(ctx context.Context, request RemoveFavoriteReques
 	return RemoveFavorite204Response{}, nil
 }
 func (api *api) ListPriceAlerts(ctx context.Context, request ListPriceAlertsRequestObject) (ListPriceAlertsResponseObject, error) {
-	items, err := api.alerts.List(ctx, currentUserID(ctx), request.Symbol)
+	items, err := api.Alerts.List(ctx, currentUserID(ctx), request.Symbol)
 	if err != nil {
 		return ListPriceAlerts500JSONResponse{api.internalError(ctx, "list_price_alerts", err)}, nil
 	}
@@ -110,7 +78,7 @@ func (api *api) ListPriceAlerts(ctx context.Context, request ListPriceAlertsRequ
 	return ListPriceAlerts200JSONResponse{Items: result, Count: len(result), Limit: alerts.MaxPerInstrument}, nil
 }
 func (api *api) CreatePriceAlert(ctx context.Context, request CreatePriceAlertRequestObject) (CreatePriceAlertResponseObject, error) {
-	item, err := api.alerts.Create(ctx, currentUserID(ctx), request.Symbol, request.Body.Target)
+	item, err := api.Alerts.Create(ctx, currentUserID(ctx), request.Symbol, request.Body.Target)
 	if response := api.createAlertError(ctx, err); response != nil {
 		return response, nil
 	}
@@ -133,7 +101,7 @@ func (api *api) createAlertError(ctx context.Context, err error) CreatePriceAler
 	}
 }
 func (api *api) UpdatePriceAlert(ctx context.Context, request UpdatePriceAlertRequestObject) (UpdatePriceAlertResponseObject, error) {
-	item, err := api.alerts.Update(ctx, currentUserID(ctx), request.AlertId, request.Body.Target)
+	item, err := api.Alerts.Update(ctx, currentUserID(ctx), request.AlertId, request.Body.Target)
 	switch {
 	case err == nil:
 		return UpdatePriceAlert200JSONResponse(alertDTO(item)), nil
@@ -148,7 +116,7 @@ func (api *api) UpdatePriceAlert(ctx context.Context, request UpdatePriceAlertRe
 	}
 }
 func (api *api) DeletePriceAlert(ctx context.Context, request DeletePriceAlertRequestObject) (DeletePriceAlertResponseObject, error) {
-	err := api.alerts.Delete(ctx, currentUserID(ctx), request.AlertId)
+	err := api.Alerts.Delete(ctx, currentUserID(ctx), request.AlertId)
 	if errors.Is(err, alerts.ErrNotFound) {
 		return DeletePriceAlert404JSONResponse{AlertNotFoundJSONResponse: AlertNotFoundJSONResponse(alertNotFound(ctx).body)}, nil
 	}

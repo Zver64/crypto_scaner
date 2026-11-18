@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -46,16 +47,16 @@ func TestAuthenticatedUserCanAnalyzeOneInstrument(t *testing.T) {
 	}
 }
 
-func TestInstrumentAnalysisPreservesRangePrecisionForGridSteps(t *testing.T) {
+// Both analyses return the metrics unrounded, such as the ranges grid steps
+// are calculated from.
+func TestAnalysesPreserveRangePrecision(t *testing.T) {
 	for _, test := range []struct {
 		name         string
 		rangePercent float64
-		scanRange    float64
 	}{
-		// 0.02469 / 2 displays as 0.0123%; rounding first gives 0.0124%.
-		{"rounding changes displayed step", 0.02469, 0.0247},
-		{"small positive range", 0.00001234, 0},
-		{"genuine zero", 0, 0},
+		{"fraction of a basis point", 0.02469},
+		{"small positive range", 0.00001234},
+		{"genuine zero", 0},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			start := time.Date(2026, time.August, 1, 0, 0, 0, 0, time.UTC)
@@ -84,8 +85,8 @@ func TestInstrumentAnalysisPreservesRangePrecisionForGridSteps(t *testing.T) {
 			if err := json.Unmarshal(response.Body.Bytes(), &scan); err != nil {
 				t.Fatal(err)
 			}
-			if len(scan.Items) != 1 || len(scan.Items[0].Evaluations) != 1 || scan.Items[0].Evaluations[0].Metrics["range_percent"] != test.scanRange {
-				t.Fatalf("scan presentation changed: %+v", scan.Items)
+			if len(scan.Items) != 1 || len(scan.Items[0].Evaluations) != 1 || math.Abs(scan.Items[0].Evaluations[0].Metrics["range_percent"]-test.rangePercent) > 1e-12 {
+				t.Fatalf("scan items = %+v, want range %.12g", scan.Items, test.rangePercent)
 			}
 		})
 	}
@@ -137,7 +138,7 @@ func TestAuthenticatedUserCanSearchMarket(t *testing.T) {
 		t.Fatalf("items = %+v", body.Items)
 	}
 	first, second := body.Items[0].Evaluations[0], body.Items[1].Evaluations[0]
-	if first.Key != "volatility" || first.Name != "volatility" || first.Label != "Volatility" || !first.Matched || first.CandleCount != 2 || first.Metrics["range_percent"] != 9.4381 || second.Key != "volatility" || second.Name != "volatility" || second.Label != "Volatility" || !second.Matched || second.CandleCount != 2 || second.Metrics["range_percent"] != 4 {
+	if first.Key != "volatility" || first.Name != "volatility" || first.Label != "Volatility" || !first.Matched || first.CandleCount != 2 || math.Abs(first.Metrics["range_percent"]-9.43814) > 1e-9 || second.Key != "volatility" || second.Name != "volatility" || second.Label != "Volatility" || !second.Matched || second.CandleCount != 2 || second.Metrics["range_percent"] != 4 {
 		t.Fatalf("evaluations = %+v", body.Items)
 	}
 }
@@ -180,7 +181,7 @@ func TestAnalysisRejectsMalformedAndUnknownJSON(t *testing.T) {
 		if err := json.Unmarshal(res.Body.Bytes(), &envelope); err != nil {
 			t.Fatalf("decode %q: %v", res.Body.String(), err)
 		}
-		if envelope.Error.Message != "Invalid analysis argument" {
+		if !strings.HasPrefix(envelope.Error.Message, "Invalid request") {
 			t.Fatalf("message = %q", envelope.Error.Message)
 		}
 	}
@@ -204,7 +205,7 @@ func TestAnalysisSchemaValidationRejectsRequestsBeforeService(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			service := &countingAnalysis{}
-			handler := httpapi.NewWithAuthentication(logging.New(io.Discard, "error", logging.Options{}), httpapi.Dependencies{Readiness: readinessStub{}, Analysis: service, MarketTables: service}, httpapi.Options{}, passThrough)
+			handler := newTestHandlerWithAuthentication(logging.New(io.Discard, "error", logging.Options{}), httpapi.Dependencies{Readiness: readinessStub{}, Analysis: service, MarketTables: service}, httpapi.Options{}, passThrough)
 			response := analysisRequestTo(t, handler, test.path, test.body)
 			if response.Code != http.StatusBadRequest {
 				t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
@@ -217,7 +218,7 @@ func TestAnalysisSchemaValidationRejectsRequestsBeforeService(t *testing.T) {
 			if err := json.Unmarshal(response.Body.Bytes(), &envelope); err != nil {
 				t.Fatal(err)
 			}
-			if envelope.Error.Message != "Invalid analysis argument" {
+			if !strings.HasPrefix(envelope.Error.Message, "Invalid request body") {
 				t.Fatalf("message = %q", envelope.Error.Message)
 			}
 			if service.symbolCalls != 0 || service.searchCalls != 0 {
@@ -241,7 +242,7 @@ func TestMarketAnalysisPreservesOmittedAndZeroLimitWithOptionalSort(t *testing.T
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			service := &countingAnalysis{}
-			handler := httpapi.NewWithAuthentication(logging.New(io.Discard, "error", logging.Options{}), httpapi.Dependencies{Readiness: readinessStub{}, Analysis: service, MarketTables: service}, httpapi.Options{}, passThrough)
+			handler := newTestHandlerWithAuthentication(logging.New(io.Discard, "error", logging.Options{}), httpapi.Dependencies{Readiness: readinessStub{}, Analysis: service, MarketTables: service}, httpapi.Options{}, passThrough)
 			response := analysisRequestTo(t, handler, "/api/v1/analysis/market", test.body)
 			if response.Code != http.StatusBadRequest {
 				t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
@@ -409,23 +410,25 @@ func (service *countingAnalysis) AnalyzeSymbol(context.Context, analysis.SymbolR
 	return analysis.SymbolResult{}, analysis.ErrInvalidArgument
 }
 
-func (service *countingAnalysis) Search(_ context.Context, request analysis.SearchRequest) (markettable.Result, error) {
+func (service *countingAnalysis) Analyze(_ context.Context, _ int64, _ markettable.Universe, request analysis.SearchRequest) (markettable.Result, error) {
 	service.searchCalls++
 	service.searchRequest = request
 	return markettable.Result{}, analysis.ErrInvalidArgument
 }
 
-func (service *countingAnalysis) CoinM(ctx context.Context, request analysis.SearchRequest) (markettable.Result, error) {
-	return service.Search(ctx, request)
-}
-
-func (service *countingAnalysis) CoinMSymbols(context.Context) ([]string, error) {
+func (service *countingAnalysis) Symbols(context.Context, int64, markettable.Universe) ([]string, error) {
 	return nil, nil
 }
 
-func (service *countingAnalysis) Favorites(context.Context, []favorites.Favorite, analysis.SearchRequest) (markettable.Result, error) {
-	return markettable.Result{}, analysis.ErrInvalidArgument
+type noInstruments struct{}
+
+func (noInstruments) ListActiveInstruments(context.Context) ([]market.Instrument, error) {
+	return nil, nil
 }
+
+type noFavorites struct{}
+
+func (noFavorites) List(context.Context, int64) ([]favorites.Favorite, error) { return nil, nil }
 
 type noCoinMPerpetuals struct{}
 
@@ -470,11 +473,11 @@ func newAnalysisHTTPHandler(store analysisHTTPStore, additionalFactories ...anal
 	if err != nil {
 		panic(err)
 	}
-	tables, err := markettable.NewService(service, noClosedIndicators{}, store, noCoinMPerpetuals{}, table, table, table)
+	tables, err := markettable.NewService(service, noClosedIndicators{}, store, noCoinMPerpetuals{}, noInstruments{}, noFavorites{}, markettable.Catalogs{Market: table, CoinM: table, Favorites: table})
 	if err != nil {
 		panic(err)
 	}
-	return httpapi.New(logging.New(io.Discard, "error", logging.Options{}), httpapi.Dependencies{Readiness: readinessStub{marketSync: true}, Analysis: service, MarketTables: tables, Sessions: analysisSessions{}}, httpapi.Options{})
+	return newTestHandler(logging.New(io.Discard, "error", logging.Options{}), httpapi.Dependencies{Readiness: readinessStub{marketSync: true}, Analysis: service, MarketTables: tables, Sessions: analysisSessions{}}, httpapi.Options{})
 }
 
 type httpStore struct {

@@ -17,9 +17,9 @@ import type {
 } from "react-querybuilder/parseCEL";
 
 import {
-	type StrategyIndicatorChoice,
-	type StrategyIndicatorParameter,
-	StrategyIndicatorParameterKind,
+	type IndicatorChoice,
+	type IndicatorParameter,
+	IndicatorParameterKind,
 } from "@/api/generated/models";
 import { indicatorSourceItem } from "@/features/strategy-settings/constants";
 import type {
@@ -372,17 +372,17 @@ export function callArgumentIssues(field: string): number[][] {
 // name, such as volume or price, a source choice without one empty, as only
 // leaving the source out writes it, and any other choice by its value.
 export function choiceArgument(
-	parameter: StrategyIndicatorParameter,
-	choice: StrategyIndicatorChoice,
+	parameter: IndicatorParameter,
+	choice: IndicatorChoice,
 ): string {
 	if (choice.name !== undefined) return choice.name;
-	return parameter.kind === StrategyIndicatorParameterKind.source
+	return parameter.kind === IndicatorParameterKind.source
 		? ""
 		: canonicalNumber(choice.value);
 }
 
 // The argument a call leaves out for parameter: its default.
-export function defaultArgument(parameter: StrategyIndicatorParameter): string {
+export function defaultArgument(parameter: IndicatorParameter): string {
 	const choice = parameter.choices?.find(
 		({ value }) => value === parameter.default,
 	);
@@ -411,8 +411,7 @@ export function indicatorCall(
 	const args: IndicatorArgument[] = [];
 	for (const [index, parameter] of parameters.entries()) {
 		const arg = call.args[index] ?? defaultArgument(parameter);
-		const source =
-			parameter.kind === StrategyIndicatorParameterKind.source && !nested;
+		const source = parameter.kind === IndicatorParameterKind.source && !nested;
 		// A source whose indicator is still to be chosen stays as it is.
 		if (!arg.includes("(") || (source && arg === indicatorSourceItem.value)) {
 			args.push(arg);

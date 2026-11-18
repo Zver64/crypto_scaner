@@ -9,6 +9,10 @@
  * `POST /api/v1/auth/session` and send `Authorization: Bearer <token>` to every
  * other operation. A request rejected with `401` needs a new session.
  *
+ * Every response carries an `X-Request-ID` header: the caller's own
+ * `X-Request-ID` when it is a safe value, otherwise one the server assigns.
+ * Error bodies repeat it as `request_id`.
+ *
  * The client offers the WebSocket subprotocol `crypto-scanner.live.v1` followed by
  * its session token as a second subprotocol (`Sec-WebSocket-Protocol`); the token is
  * never placed in the URL. The handshake fails with `401` for a missing or invalid
@@ -21,15 +25,23 @@
  *
  * OpenAPI spec version: 1.0.0
  */
+import type { IndicatorOutput } from './indicatorOutput.ts';
 import type { IndicatorParameter } from './indicatorParameter.ts';
 
+/**
+ * An indicator the scanner can calculate, as calls name it, such as `bbands`, with the parameters that follow the period.
+ */
 export interface IndicatorType {
   type: string;
   title: string;
   group: string;
   /** Charts draw it over the candles; otherwise in a pane below. */
   overlay: boolean;
+  /** The parameters in the order calls write them after the period. */
   parameters: IndicatorParameter[];
-  /** @minItems 1 */
-  outputs: string[];
+  /**
+     * The outputs; calls of an indicator with several add the output to the type, such as `bbands_upperband`, calls of one with a single output are named by the type alone.
+     * @minItems 1
+     */
+  outputs: IndicatorOutput[];
 }

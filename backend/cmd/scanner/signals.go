@@ -20,8 +20,8 @@ type kind struct {
 	signals bool
 	// noun names one, plural the command group.
 	noun, plural string
-	// directions are those of --direction: how a strategy trades or what a
-	// signal expects.
+	// directions complete --direction: how a strategy trades or what a
+	// signal expects. The server refuses the others.
 	directions []string
 }
 
@@ -31,7 +31,7 @@ var (
 )
 
 // holds reports whether strategy belongs to k.
-func (k kind) holds(strategy apiclient.Strategy) bool { return strategy.Signal == k.signals }
+func (k kind) holds(strategy apiclient.Strategy) bool { return strategy.Rules.Signal == k.signals }
 
 // other is the group of the saved strategies k does not hold.
 func (k kind) other() kind {
@@ -43,23 +43,18 @@ func (k kind) other() kind {
 
 // saved returns the saved strategy id of k, refusing one of the other group.
 func (c *cli) saved(command *cobra.Command, client *apiclient.ClientWithResponses, k kind, id uuid.UUID) (*apiclient.Strategy, error) {
-	listed, err := client.ListStrategiesWithResponse(command.Context())
+	found, err := client.GetStrategyWithResponse(command.Context(), id)
 	if err == nil {
-		err = c.check(listed, listed.JSON200 != nil)
+		err = c.check(found, found.JSON200 != nil, found.JSON404)
 	}
 	if err != nil {
 		return nil, err
 	}
-	index := slices.IndexFunc(listed.JSON200.Items, func(strategy apiclient.Strategy) bool { return strategy.Id == id })
-	if index < 0 {
-		return nil, failure("strategy_not_found", "no %s %s; see scanner %s", k.noun, id, k.plural)
-	}
-	current := listed.JSON200.Items[index]
-	if !k.holds(current) {
+	if !k.holds(*found.JSON200) {
 		other := k.other()
 		return nil, failure("not_a_"+k.noun, "%s is a %s; use scanner %s", id, other.noun, other.plural)
 	}
-	return &current, nil
+	return found.JSON200, nil
 }
 
 // editable returns the saved strategy id of k that is disabled: enabled ones
@@ -75,33 +70,17 @@ func (c *cli) editable(command *cobra.Command, client *apiclient.ClientWithRespo
 	return current, nil
 }
 
-// update validates the changed rules and sends body for current.
-func (c *cli) update(command *cobra.Command, client *apiclient.ClientWithResponses, k kind, current apiclient.Strategy, body apiclient.StrategyUpdate, rules []strategyRule) error {
-	if err := c.prepareStrategyRules(command, client, rules); err != nil {
-		return err
-	}
-	updated, err := client.UpdateStrategyWithResponse(command.Context(), current.Id, body)
+// update sends body for the strategy id of k; the server checks it.
+func (c *cli) update(command *cobra.Command, client *apiclient.ClientWithResponses, k kind, id uuid.UUID, body apiclient.StrategyUpdate) error {
+	updated, err := client.UpdateStrategyWithResponse(command.Context(), id, body)
 	if err == nil {
-		err = c.check(updated, updated.JSON200 != nil, updated.JSON400, updated.JSON404, updated.JSON409)
+		err = c.check(updated, updated.JSON200 != nil, strategyInvalid(updated.JSON400), updated.JSON404, updated.JSON409)
 	}
 	if err != nil {
 		return err
 	}
 	c.print(command, updated.Body, func(w io.Writer) { renderStrategies(w, k, []apiclient.Strategy{*updated.JSON200}) })
 	return nil
-}
-
-// directionFlag parses --direction among the directions of k.
-func (k kind) directionFlag(value string) (apiclient.Direction, error) {
-	if slices.Contains(k.directions, value) {
-		return apiclient.Direction(value), nil
-	}
-	last := len(k.directions) - 1
-	list := strings.Join(k.directions[:last], ", ")
-	if last > 1 {
-		list += ","
-	}
-	return "", usageError("--direction: %q is not %s or %s", value, list, k.directions[last])
 }
 
 // completeDirections completes --direction among the directions of k.
@@ -114,8 +93,8 @@ func (k kind) completeDirections() cobra.CompletionFunc {
 type signalFlags struct{ ratio, window int }
 
 var (
-	signalTargetRatios = []int{2, 3, 4, 5}
-	signalWindows      = []int{3, 6, 12, 24}
+	signalTargetRatios = []apiclient.SignalTargetRatio{apiclient.SignalTargetRatioN2, apiclient.SignalTargetRatioN3, apiclient.SignalTargetRatioN4, apiclient.SignalTargetRatioN5}
+	signalWindows      = []apiclient.SignalWindow{apiclient.SignalWindowN3, apiclient.SignalWindowN6, apiclient.SignalWindowN12, apiclient.SignalWindowN24}
 )
 
 // add registers the flags; a create command defaults them to 2 stops and 6
@@ -123,7 +102,7 @@ var (
 // omitted.
 func (f *signalFlags) add(command *cobra.Command, create bool) {
 	flags := command.Flags()
-	ratio, window, suffix := 2, 6, ""
+	ratio, window, suffix := int(apiclient.SignalTargetRatioN2), int(apiclient.SignalWindowN6), ""
 	if !create {
 		ratio, window, suffix = 0, 0, "; omitted preserves it"
 	}
@@ -135,44 +114,36 @@ func (f *signalFlags) add(command *cobra.Command, create bool) {
 
 // check refuses given or defaulted values outside the allowed ones.
 func (f signalFlags) check(flags *pflag.FlagSet) error {
-	if (f.ratio != 0 || flags.Changed("target-ratio")) && !slices.Contains(signalTargetRatios, f.ratio) {
+	if (f.ratio != 0 || flags.Changed("target-ratio")) && !apiclient.SignalTargetRatio(f.ratio).Valid() {
 		return usageError("--target-ratio: %d is not %s", f.ratio, choices(signalTargetRatios))
 	}
-	if (f.window != 0 || flags.Changed("window")) && !slices.Contains(signalWindows, f.window) {
+	if (f.window != 0 || flags.Changed("window")) && !apiclient.SignalWindow(f.window).Valid() {
 		return usageError("--window: %d is not %s", f.window, choices(signalWindows))
 	}
 	return nil
 }
 
-// checkSimple refuses the flags for a simple signal, which is never judged.
-func (signalFlags) checkSimple(flags *pflag.FlagSet) error {
-	if flags.Changed("target-ratio") || flags.Changed("window") {
-		return usageError("--target-ratio and --window: a simple signal is never judged")
-	}
-	return nil
-}
-
-// update replaces the settings of body whose flags were given, preserving
+// update replaces the settings of rules whose flags were given, preserving
 // the others.
-func (f signalFlags) update(flags *pflag.FlagSet, body *apiclient.StrategyUpdate) {
+func (f signalFlags) update(flags *pflag.FlagSet, rules *apiclient.StrategyRules) {
 	if flags.Changed("target-ratio") {
-		body.TargetRatio = new(apiclient.SignalTargetRatio(f.ratio))
+		rules.TargetRatio = new(apiclient.SignalTargetRatio(f.ratio))
 	}
 	if flags.Changed("window") {
-		body.Window = new(apiclient.SignalWindow(f.window))
+		rules.Window = new(apiclient.SignalWindow(f.window))
 	}
 }
 
 // choices lists values as "2, 3, 4, or 5".
-func choices(values []int) string {
+func choices[T ~int](values []T) string {
 	list := texts(values)
 	return strings.Join(list[:len(list)-1], ", ") + ", or " + list[len(list)-1]
 }
 
-func texts(values []int) []string {
+func texts[T ~int](values []T) []string {
 	list := make([]string, len(values))
 	for i, value := range values {
-		list[i] = strconv.Itoa(value)
+		list[i] = strconv.Itoa(int(value))
 	}
 	return list
 }
@@ -188,32 +159,24 @@ func (c *cli) createSignalCommand() *cobra.Command {
 		Short: "Save a disabled signal, which buys nothing and announces the move it expects",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(command *cobra.Command, args []string) error {
-			move, err := rules.parse(command)
+			signal, err := rules.rules(command)
 			if err != nil {
 				return err
 			}
-			minimum, maximum, err := marketCap.parse()
-			if err != nil {
+			body := apiclient.StrategyInput{Name: args[0], Rules: signal, Message: message}
+			if body.Coins.MinMarketCapUsd, body.Coins.MaxMarketCapUsd, err = marketCap.parse(); err != nil {
 				return err
 			}
 			client, err := c.client()
 			if err != nil {
 				return err
 			}
-			chosen, source, err := c.resolveCoins(command, client, coins)
-			if err != nil {
+			if body.Coins.Symbols, body.Coins.Source, err = c.resolveCoins(command, client, coins); err != nil {
 				return err
 			}
-			if err := c.prepareStrategyRules(command, client, rules.rules()); err != nil {
-				return err
-			}
-			ratio, window := rules.judging(move)
-			created, err := client.CreateStrategyWithResponse(command.Context(), apiclient.StrategyInput{
-				Name: args[0], Signal: true, Direction: move, Expression: rules.expression, Coins: chosen, CoinSource: source,
-				TargetRatio: ratio, Window: window, MinMarketCapUsd: minimum, MaxMarketCapUsd: maximum, Message: message,
-			})
+			created, err := client.CreateStrategyWithResponse(command.Context(), body)
 			if err == nil {
-				err = c.check(created, created.JSON201 != nil, created.JSON400, created.JSON409)
+				err = c.check(created, created.JSON201 != nil, strategyInvalid(created.JSON400), created.JSON409)
 			}
 			if err != nil {
 				return err
@@ -247,31 +210,21 @@ func (f *signalRuleFlags) add(command *cobra.Command) {
 	_ = command.RegisterFlagCompletionFunc("direction", signalsKind.completeDirections())
 }
 
-// parse checks the move and the settings and returns the move. A simple
-// signal is never judged, so it takes neither --target-ratio nor --window.
-func (f signalRuleFlags) parse(command *cobra.Command) (apiclient.Direction, error) {
-	move, err := signalsKind.directionFlag(f.direction)
-	if err != nil {
-		return "", err
+// rules checks the settings and returns the rules of the signal. A simple
+// signal is never judged, so the defaults of --target-ratio and --window
+// are not sent for it; given ones are, and the server refuses them.
+func (f signalRuleFlags) rules(command *cobra.Command) (apiclient.StrategyRules, error) {
+	flags := command.Flags()
+	if err := f.settings.check(flags); err != nil {
+		return apiclient.StrategyRules{}, err
 	}
-	if move == apiclient.Simple {
-		return move, f.settings.checkSimple(command.Flags())
+	rules := apiclient.StrategyRules{Signal: true, Direction: apiclient.Direction(f.direction), Expression: f.expression}
+	if rules.Direction == apiclient.Simple {
+		f.settings.update(flags, &rules)
+		return rules, nil
 	}
-	return move, f.settings.check(command.Flags())
-}
-
-// judging returns the target ratio and the window to send for move: none
-// for a simple signal.
-func (f signalRuleFlags) judging(move apiclient.Direction) (*apiclient.SignalTargetRatio, *apiclient.SignalWindow) {
-	if move == apiclient.Simple {
-		return nil, nil
-	}
-	return new(apiclient.SignalTargetRatio(f.settings.ratio)), new(apiclient.SignalWindow(f.settings.window))
-}
-
-// rules lists the expression for prepareStrategyRules.
-func (f signalRuleFlags) rules() []strategyRule {
-	return []strategyRule{{f.expression, apiclient.StrategyValidationInputKindEntry, "the entry rule"}}
+	rules.TargetRatio, rules.Window = new(apiclient.SignalTargetRatio(f.settings.ratio)), new(apiclient.SignalWindow(f.settings.window))
+	return rules, nil
 }
 
 func (c *cli) updateSignalCommand() *cobra.Command {
@@ -311,36 +264,25 @@ func (c *cli) updateSignalCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if current.Direction == apiclient.Simple {
-				if err := settings.checkSimple(flags); err != nil {
-					return err
-				}
-			}
-			body := apiclient.StrategyUpdate{
-				Name: current.Name, Signal: current.Signal, Direction: current.Direction, Expression: current.Expression,
-				Coins: current.Coins, CoinSource: current.CoinSource, TargetRatio: current.TargetRatio, Window: current.Window,
-				MinMarketCapUsd: current.MinMarketCapUsd, MaxMarketCapUsd: current.MaxMarketCapUsd, Message: current.Message,
-			}
+			body := apiclient.StrategyUpdate{Name: current.Name, Rules: current.Rules, Coins: current.Coins, Message: current.Message}
 			// Chosen coins replace the current ones.
 			if coins.changed() {
-				if body.Coins, body.CoinSource, err = c.resolveCoins(command, client, coins); err != nil {
+				if body.Coins.Symbols, body.Coins.Source, err = c.resolveCoins(command, client, coins); err != nil {
 					return err
 				}
 			}
-			settings.update(flags, &body)
-			marketCap.update(flags, &body, minimum, maximum)
-			if flags.Changed("name") {
-				body.Name = name
+			settings.update(flags, &body.Rules)
+			marketCap.update(flags, &body.Coins, minimum, maximum)
+			for _, change := range []struct {
+				flag   string
+				target *string
+				value  string
+			}{{"name", &body.Name, name}, {"message", &body.Message, message}, {"expr", &body.Rules.Expression, expression}} {
+				if flags.Changed(change.flag) {
+					*change.target = change.value
+				}
 			}
-			if flags.Changed("message") {
-				body.Message = message
-			}
-			var rules []strategyRule
-			if flags.Changed("expr") {
-				body.Expression = expression
-				rules = append(rules, strategyRule{body.Expression, apiclient.StrategyValidationInputKindEntry, "the entry rule"})
-			}
-			return c.update(command, client, signalsKind, *current, body, rules)
+			return c.update(command, client, signalsKind, id, body)
 		},
 	}
 	command.Flags().StringVar(&expression, "expr", "", "the entry rule `EXPR`ession; omitted preserves the current one")

@@ -9,6 +9,10 @@
  * `POST /api/v1/auth/session` and send `Authorization: Bearer <token>` to every
  * other operation. A request rejected with `401` needs a new session.
  *
+ * Every response carries an `X-Request-ID` header: the caller's own
+ * `X-Request-ID` when it is a safe value, otherwise one the server assigns.
+ * Error bodies repeat it as `request_id`.
+ *
  * The client offers the WebSocket subprotocol `crypto-scanner.live.v1` followed by
  * its session token as a second subprotocol (`Sec-WebSocket-Protocol`); the token is
  * never placed in the URL. The handshake fails with `401` for a missing or invalid
@@ -21,14 +25,13 @@
  *
  * OpenAPI spec version: 1.0.0
  */
+import type { SavedBacktestedStrategyKind } from './savedBacktestedStrategyKind.ts';
+import type { StrategyID } from './strategyID.ts';
 
 /**
- * Take profit price, a CEL price expression evaluated at the close of
- * the entry signal and fixed for the trade, such as `close("1h") * 1.05` or
- * `bbands_upperband("1h", 20)`: arithmetic and `Abs`, `Mod`, `Min`,
- * `Max`, `Prev`, `Percentile`, and `Of` over calls and numbers,
- * reading the evaluated coin. A signal whose take profit is not above
- * its close buys nothing. Empty without a take profit.
- * @maxLength 2000
+ * A saved strategy or signal, enabled or not.
  */
-export type StrategyTakeProfitExpression = string;
+export interface SavedBacktestedStrategy {
+  kind: SavedBacktestedStrategyKind;
+  id: StrategyID;
+}

@@ -45,16 +45,16 @@ const maxListedCoins = 3
 
 // coinsLabel names the coins a strategy evaluates, such as "BTCUSDT,
 // ETHUSDT", "BTCUSDT, ETHUSDT, SOLUSDT +5", "favorites", or "all".
-func coinsLabel(strategy apiclient.Strategy) string {
+func coinsLabel(coins apiclient.StrategyCoins) string {
 	switch {
-	case strategy.CoinSource != apiclient.CoinSourceSelected:
-		return string(strategy.CoinSource)
-	case len(strategy.Coins) == 0:
+	case coins.Source != apiclient.CoinSourceSelected:
+		return string(coins.Source)
+	case len(coins.Symbols) == 0:
 		return "-"
-	case len(strategy.Coins) > maxListedCoins:
-		return fmt.Sprintf("%s +%d", strings.Join(strategy.Coins[:maxListedCoins], ", "), len(strategy.Coins)-maxListedCoins)
+	case len(coins.Symbols) > maxListedCoins:
+		return fmt.Sprintf("%s +%d", strings.Join(coins.Symbols[:maxListedCoins], ", "), len(coins.Symbols)-maxListedCoins)
 	}
-	return strings.Join(strategy.Coins, ", ")
+	return strings.Join(coins.Symbols, ", ")
 }
 
 // renderStrategies prints the strategies of k; on a terminal, the Name, Entry,
@@ -95,10 +95,11 @@ func renderStrategiesWidth(w io.Writer, k kind, strategies []apiclient.Strategy,
 		if strategy.Message != "" {
 			name += "\nmessage: " + strategy.Message
 		}
-		expression := strings.Join(strings.Fields(strategy.Expression), " ")
-		row := table.Row{strategy.Id, state, name, string(strategy.Direction), expression, exits(strategy), buys(strategy), coinsLabel(strategy)}
+		rules := strategy.Rules
+		expression := strings.Join(strings.Fields(rules.Expression), " ")
+		row := table.Row{strategy.Id, state, name, string(rules.Direction), expression, exits(rules), buys(rules), coinsLabel(strategy.Coins)}
 		if k.signals {
-			row = table.Row{strategy.Id, state, name, expression, string(strategy.Direction), signalSetting(strategy.Window, "candles"), signalSetting(strategy.TargetRatio, "stops"), coinsLabel(strategy), marketCapRange(strategy)}
+			row = table.Row{strategy.Id, state, name, expression, string(rules.Direction), signalSetting(rules.Window, "candles"), signalSetting(rules.TargetRatio, "stops"), coinsLabel(strategy.Coins), marketCapRange(strategy.Coins)}
 		}
 		rows = append(rows, row)
 		measure(row)
@@ -222,10 +223,10 @@ func signalSetting[T ~int](value *T, unit string) string {
 
 // exits lists the exit rule, take profit, and stop loss of a strategy, one
 // per line.
-func exits(strategy apiclient.Strategy) string {
+func exits(rules apiclient.StrategyRules) string {
 	var lines []string
 	for _, exit := range []struct{ label, expression string }{
-		{"", strategy.ExitExpression}, {"TP ", strategy.TakeProfitExpression}, {"SL ", strategy.StopLossExpression},
+		{"", rules.ExitExpression}, {"TP ", rules.TakeProfitExpression}, {"SL ", rules.StopLossExpression},
 	} {
 		if exit.expression != "" {
 			lines = append(lines, exit.label+strings.Join(strings.Fields(exit.expression), " "))
@@ -239,11 +240,11 @@ func exits(strategy apiclient.Strategy) string {
 
 // buys tells how a strategy buys: one short per trade for a short one, once
 // per trade with an exit, at every signal without one.
-func buys(strategy apiclient.Strategy) string {
-	if strategy.Direction == apiclient.Short {
+func buys(rules apiclient.StrategyRules) string {
+	if rules.Direction == apiclient.Short {
 		return "one short per trade"
 	}
-	if strategy.ExitExpression != "" || strategy.TakeProfitExpression != "" || strategy.StopLossExpression != "" {
+	if rules.ExitExpression != "" || rules.TakeProfitExpression != "" || rules.StopLossExpression != "" {
 		return "one per trade"
 	}
 	return "every signal"

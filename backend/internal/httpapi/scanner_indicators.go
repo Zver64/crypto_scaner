@@ -30,7 +30,7 @@ func (api *api) GetCurrentUser(ctx context.Context, _ GetCurrentUserRequestObjec
 }
 
 func (api *api) ListIndicatorTypes(context.Context, ListIndicatorTypesRequestObject) (ListIndicatorTypesResponseObject, error) {
-	descriptors := api.indicatorTypes.Descriptors()
+	descriptors := api.IndicatorTypes.Descriptors()
 	items := make([]IndicatorType, len(descriptors))
 	for i, descriptor := range descriptors {
 		items[i] = indicatorTypeDTO(descriptor)
@@ -39,7 +39,7 @@ func (api *api) ListIndicatorTypes(context.Context, ListIndicatorTypesRequestObj
 }
 
 func (api *api) ListScannerIndicators(context.Context, ListScannerIndicatorsRequestObject) (ListScannerIndicatorsResponseObject, error) {
-	return ListScannerIndicators200JSONResponse(scannerIndicatorListDTO(api.scannerIndicators.List())), nil
+	return ListScannerIndicators200JSONResponse(scannerIndicatorListDTO(api.ScannerIndicators.List())), nil
 }
 
 func scannerIndicatorListDTO(entries []scannerindicator.Entry) ScannerIndicatorList {
@@ -51,7 +51,7 @@ func scannerIndicatorListDTO(entries []scannerindicator.Entry) ScannerIndicatorL
 }
 
 func (api *api) CreateScannerIndicator(ctx context.Context, request CreateScannerIndicatorRequestObject) (CreateScannerIndicatorResponseObject, error) {
-	entry, err := api.scannerIndicators.Create(ctx, scannerindicator.Indicator{
+	entry, err := api.ScannerIndicators.Create(ctx, scannerindicator.Indicator{
 		Selection: indicator.Selection{Type: indicator.Type(request.Body.Type), Parameters: indicator.Parameters(request.Body.Parameters)},
 		Periods:   periodsFromDTO(request.Body.Periods),
 		Scale:     scaleFromDTO(request.Body.Scale),
@@ -71,7 +71,7 @@ func (api *api) CreateScannerIndicator(ctx context.Context, request CreateScanne
 }
 
 func (api *api) UpdateScannerIndicator(ctx context.Context, request UpdateScannerIndicatorRequestObject) (UpdateScannerIndicatorResponseObject, error) {
-	entry, err := api.scannerIndicators.Update(ctx, request.IndicatorId, periodsFromDTO(request.Body.Periods), scaleFromDTO(request.Body.Scale))
+	entry, err := api.ScannerIndicators.Update(ctx, request.IndicatorId, periodsFromDTO(request.Body.Periods), scaleFromDTO(request.Body.Scale))
 	switch {
 	case err == nil:
 		return UpdateScannerIndicator200JSONResponse(scannerIndicatorDTO(entry)), nil
@@ -87,7 +87,7 @@ func (api *api) UpdateScannerIndicator(ctx context.Context, request UpdateScanne
 }
 
 func (api *api) ReorderScannerIndicators(ctx context.Context, request ReorderScannerIndicatorsRequestObject) (ReorderScannerIndicatorsResponseObject, error) {
-	entries, err := api.scannerIndicators.Reorder(ctx, request.Body.Ids)
+	entries, err := api.ScannerIndicators.Reorder(ctx, request.Body.Ids)
 	switch {
 	case err == nil:
 		return ReorderScannerIndicators200JSONResponse(scannerIndicatorListDTO(entries)), nil
@@ -101,7 +101,7 @@ func (api *api) ReorderScannerIndicators(ctx context.Context, request ReorderSca
 }
 
 func (api *api) DeleteScannerIndicator(ctx context.Context, request DeleteScannerIndicatorRequestObject) (DeleteScannerIndicatorResponseObject, error) {
-	err := api.scannerIndicators.Delete(ctx, request.IndicatorId)
+	err := api.ScannerIndicators.Delete(ctx, request.IndicatorId)
 	switch {
 	case err == nil:
 		return DeleteScannerIndicator204Response{}, nil
@@ -148,6 +148,8 @@ func scannerIndicatorDTO(entry scannerindicator.Entry) ScannerIndicator {
 	}
 }
 
+// indicatorTypeDTO describes an indicator type as calls write it, which
+// both the scanner indicator settings and the strategy catalog read.
 func indicatorTypeDTO(descriptor indicator.Descriptor) IndicatorType {
 	item := IndicatorType{
 		Type:       string(descriptor.Type),
@@ -155,18 +157,17 @@ func indicatorTypeDTO(descriptor indicator.Descriptor) IndicatorType {
 		Group:      descriptor.Group,
 		Overlay:    descriptor.Overlay,
 		Parameters: make([]IndicatorParameter, len(descriptor.Parameters)),
-		Outputs:    make([]string, len(descriptor.Outputs)),
+		Outputs:    make([]IndicatorOutput, len(descriptor.Outputs)),
 	}
 	for i, parameter := range descriptor.Parameters {
-		// Clients choose a source among its candle fields.
-		if parameter.Kind == indicator.ParameterSource {
-			parameter.Kind = indicator.ParameterChoice
-		}
 		dto := IndicatorParameter{Key: parameter.Key, Title: parameter.Title, Description: parameter.Description, Kind: IndicatorParameterKind(parameter.Kind), Default: parameter.Default}
-		if parameter.Kind == indicator.ParameterChoice {
+		if parameter.Kind == indicator.ParameterChoice || parameter.Kind == indicator.ParameterSource {
 			choices := make([]IndicatorChoice, len(parameter.Choices))
 			for j, choice := range parameter.Choices {
 				choices[j] = IndicatorChoice{Value: choice.Value, Title: choice.Title}
+				if choice.Name != "" {
+					choices[j].Name = &choice.Name
+				}
 			}
 			dto.Choices = &choices
 		} else {
@@ -175,7 +176,7 @@ func indicatorTypeDTO(descriptor indicator.Descriptor) IndicatorType {
 		item.Parameters[i] = dto
 	}
 	for i, output := range descriptor.Outputs {
-		item.Outputs[i] = output.Name
+		item.Outputs[i] = IndicatorOutput{Name: output.Name, Sparse: output.Sparse}
 	}
 	return item
 }

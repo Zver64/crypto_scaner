@@ -177,11 +177,11 @@ func formatUSD(usd float64) string {
 func (bounds MarketCapRange) validate() error {
 	for _, bound := range []*float64{bounds.MinUSD, bounds.MaxUSD} {
 		if bound != nil && !(*bound > 0 && numeric.Finite(*bound)) {
-			return fmt.Errorf("%w: market cap bounds must be positive", ErrInvalidArgument)
+			return invalid("market cap bounds must be positive")
 		}
 	}
 	if bounds.MinUSD != nil && bounds.MaxUSD != nil && *bounds.MinUSD > *bounds.MaxUSD {
-		return fmt.Errorf("%w: the minimum market cap must not exceed the maximum", ErrInvalidArgument)
+		return invalid("the minimum market cap must not exceed the maximum")
 	}
 	return nil
 }
@@ -404,6 +404,30 @@ func (service *Service) compile(source string, kind RuleKind) (*Expression, erro
 	return compiled, nil
 }
 
+// InvalidError is ErrInvalidArgument with the problems that reject a
+// strategy: every problem of its rules, or the one of its other settings.
+type InvalidError struct {
+	Problems []string
+	// cause, when not nil, is the error the only problem reads.
+	cause error
+}
+
+func (err *InvalidError) Error() string {
+	return ErrInvalidArgument.Error() + ": " + strings.Join(err.Problems, "; ")
+}
+
+func (err *InvalidError) Unwrap() []error { return []error{ErrInvalidArgument, err.cause} }
+
+// invalid rejects a strategy for one problem.
+func invalid(problem string) error {
+	return &InvalidError{Problems: []string{problem}}
+}
+
+// invalidBy rejects a strategy for the problem err reads.
+func invalidBy(err error) error {
+	return &InvalidError{Problems: []string{err.Error()}, cause: err}
+}
+
 // IndicatorCall is an indicator as calls write it: Arguments are its
 // parameters as they follow the period, such as ["20", "2.5"] for
 // bbands_upperband("1h", 20, 2.5).
@@ -498,41 +522,49 @@ func (service *Service) Validate(ctx context.Context, expression string, kind Ru
 		return Validation{}, err
 	}
 	if absent := inactive(service.activeInstruments(), compiled.Symbols()); len(absent) > 0 {
-		validation.Problems = append(validation.Problems, notActive(absent).Error())
+		validation.Problems = append(validation.Problems, notActive(absent))
 	}
 	return validation, nil
 }
 
 // compileEntry compiles the expressions of item and finds the interval it
-// trades on. Problems of the other expressions than the entry rule name
-// them.
+// trades on. It rejects item with the problems of every expression that does
+// not compile; those of the other expressions than the entry rule name them.
 func (service *Service) compileEntry(item Strategy) (Entry, error) {
 	entry := Entry{Strategy: item}
-	compiled, err := service.compile(item.Expression, EntryRule)
-	if err != nil {
-		return entry, err
-	}
-	optional := func(source, name string, kind RuleKind) (*Expression, error) {
-		if source == "" {
+	var problems []string
+	compile := func(source, name string, kind RuleKind) (*Expression, error) {
+		if source == "" && kind != EntryRule {
 			return nil, nil
 		}
 		expression, err := service.compile(source, kind)
 		var invalid *InvalidExpressionError
-		if errors.As(err, &invalid) {
-			for index, problem := range invalid.Problems {
-				invalid.Problems[index] = name + ": " + problem
-			}
+		if !errors.As(err, &invalid) {
+			return expression, err
 		}
-		return expression, err
+		for _, problem := range invalid.Problems {
+			if name != "" {
+				problem = name + ": " + problem
+			}
+			problems = append(problems, problem)
+		}
+		return nil, nil
 	}
-	if entry.Exit, err = optional(item.ExitExpression, "exit rule", ExitRule); err != nil {
+	compiled, err := compile(item.Expression, "", EntryRule)
+	if err != nil {
 		return entry, err
 	}
-	if entry.TakeProfit, err = optional(item.TakeProfitExpression, "take profit", PriceRule); err != nil {
+	if entry.Exit, err = compile(item.ExitExpression, "exit rule", ExitRule); err != nil {
 		return entry, err
 	}
-	if entry.StopLoss, err = optional(item.StopLossExpression, "stop loss", PriceRule); err != nil {
+	if entry.TakeProfit, err = compile(item.TakeProfitExpression, "take profit", PriceRule); err != nil {
 		return entry, err
+	}
+	if entry.StopLoss, err = compile(item.StopLossExpression, "stop loss", PriceRule); err != nil {
+		return entry, err
+	}
+	if len(problems) > 0 {
+		return entry, &InvalidError{Problems: problems}
 	}
 	entry.Compiled = compiled
 	entry.reads = mergeReads(compiled, entry.Exit, entry.TakeProfit, entry.StopLoss)
@@ -702,6 +734,17 @@ func (service *Service) List() []Entry {
 	return slices.Clone(service.entries)
 }
 
+// Get returns the strategy id, or ErrNotFound.
+func (service *Service) Get(id uuid.UUID) (Entry, error) {
+	service.mu.RLock()
+	defer service.mu.RUnlock()
+	index := slices.IndexFunc(service.entries, func(entry Entry) bool { return entry.ID == id })
+	if index < 0 {
+		return Entry{}, ErrNotFound
+	}
+	return service.entries[index], nil
+}
+
 // subscribe subscribes the tracker to the values the enabled strategies and
 // signals read: each value of the evaluated instrument on every instrument
 // they evaluate, and each value read through of only on the instrument it
@@ -754,7 +797,7 @@ func (service *Service) Update(ctx context.Context, item Strategy) (Entry, error
 	}
 	previous := current[index]
 	if item.Signal != previous.Signal || item.Direction != previous.Direction {
-		return Entry{}, fmt.Errorf("%w: a saved strategy or signal keeps its kind and direction; create a new one", ErrInvalidArgument)
+		return Entry{}, invalid("a saved strategy or signal keeps its kind and direction; create a new one")
 	}
 	item.Enabled = previous.Enabled
 	entry, err := service.entry(item)
@@ -794,7 +837,7 @@ func (service *Service) SetEnabled(ctx context.Context, id uuid.UUID, enabled bo
 	}
 	if enabled {
 		if current[index].CoinSource == CoinsSelected && len(current[index].Coins) == 0 {
-			return Entry{}, fmt.Errorf("%w: choose at least one coin before enabling it", ErrInvalidArgument)
+			return Entry{}, invalid("choose at least one coin before enabling it")
 		}
 		if err := service.checkCoins(current[index]); err != nil {
 			return Entry{}, err
@@ -871,11 +914,11 @@ func (service *Service) replace(entries []Entry, baselines []uuid.UUID) {
 func (service *Service) entry(item Strategy) (Entry, error) {
 	item.Name = strings.TrimSpace(item.Name)
 	if item.Name == "" || utf8.RuneCountInString(item.Name) > maxNameLength {
-		return Entry{}, fmt.Errorf("%w: the name must have 1 to %d characters", ErrInvalidArgument, maxNameLength)
+		return Entry{}, invalid(fmt.Sprintf("the name must have 1 to %d characters", maxNameLength))
 	}
 	item.Message = strings.TrimSpace(item.Message)
 	if utf8.RuneCountInString(item.Message) > maxMessageLength {
-		return Entry{}, fmt.Errorf("%w: the message must have at most %d characters", ErrInvalidArgument, maxMessageLength)
+		return Entry{}, invalid(fmt.Sprintf("the message must have at most %d characters", maxMessageLength))
 	}
 	if err := item.MarketCap.validate(); err != nil {
 		return Entry{}, err
@@ -891,17 +934,17 @@ func (service *Service) entry(item Strategy) (Entry, error) {
 	switch item.CoinSource {
 	case CoinsSelected, CoinsFavorites, CoinsAll:
 	default:
-		return Entry{}, fmt.Errorf("%w: the coin source must be selected, favorites, or all", ErrInvalidArgument)
+		return Entry{}, invalid("the coin source must be selected, favorites, or all")
 	}
 	switch {
 	case !item.Signal && (item.MarketCap.MinUSD != nil || item.MarketCap.MaxUSD != nil):
-		return Entry{}, fmt.Errorf("%w: only a signal has a market cap range", ErrInvalidArgument)
+		return Entry{}, invalid("only a signal has a market cap range")
 	case !item.Signal && item.CoinSource != CoinsSelected:
-		return Entry{}, fmt.Errorf("%w: only a signal evaluates the favorites or all coins; choose the coins of a strategy", ErrInvalidArgument)
+		return Entry{}, invalid("only a signal evaluates the favorites or all coins; choose the coins of a strategy")
 	case item.CoinSource != CoinsSelected && len(item.Coins) > 0:
-		return Entry{}, fmt.Errorf("%w: a signal of the favorites or all coins has no coins chosen", ErrInvalidArgument)
+		return Entry{}, invalid("a signal of the favorites or all coins has no coins chosen")
 	case item.CoinSource == CoinsSelected && len(item.Coins) == 0:
-		return Entry{}, fmt.Errorf("%w: choose at least one coin", ErrInvalidArgument)
+		return Entry{}, invalid("choose at least one coin")
 	}
 	return service.trading(item)
 }
@@ -910,7 +953,7 @@ func (service *Service) entry(item Strategy) (Entry, error) {
 // not active, such as a delisted one; the monitor disables it then.
 func (service *Service) checkCoins(entry Entry) error {
 	if absent := entry.inactive(service.activeInstruments()); len(absent) > 0 {
-		return fmt.Errorf("%w: %w", ErrInvalidArgument, notActive(absent))
+		return invalid(notActive(absent))
 	}
 	return nil
 }
@@ -935,8 +978,8 @@ func inactive(active []Instrument, symbols []string) []string {
 }
 
 // notActive names the absent coins, such as "not an active coin: LUNAUSDT".
-func notActive(absent []string) error {
-	return errors.New("not an active coin: " + strings.Join(absent, ", "))
+func notActive(absent []string) string {
+	return "not an active coin: " + strings.Join(absent, ", ")
 }
 
 // trading checks how item trades or what it signals and compiles its rules,
@@ -948,29 +991,29 @@ func (service *Service) trading(item Strategy) (Entry, error) {
 	item.StopLossExpression = strings.TrimSpace(item.StopLossExpression)
 	switch {
 	case !slices.Contains([]Direction{DirectionSimple, DirectionLong, DirectionShort, DirectionSideways}, item.Direction):
-		return Entry{}, fmt.Errorf("%w: the direction must be simple, long, short, or sideways", ErrInvalidArgument)
+		return Entry{}, invalid("the direction must be simple, long, short, or sideways")
 	case item.Signal:
 		if item.ExitExpression != "" || item.TakeProfitExpression != "" || item.StopLossExpression != "" {
-			return Entry{}, fmt.Errorf("%w: a signal has no exit rule, take profit, or stop loss", ErrInvalidArgument)
+			return Entry{}, invalid("a signal has no exit rule, take profit, or stop loss")
 		}
 		if item.Direction == DirectionSimple {
 			if item.TargetRatio != 0 || item.Window != 0 {
-				return Entry{}, fmt.Errorf("%w: a simple signal has no target ratio or window", ErrInvalidArgument)
+				return Entry{}, invalid("a simple signal has no target ratio or window")
 			}
 			break
 		}
 		if !slices.Contains(SignalTargetRatios, item.TargetRatio) {
-			return Entry{}, fmt.Errorf("%w: a signal's target ratio must be 2, 3, 4, or 5", ErrInvalidArgument)
+			return Entry{}, invalid("a signal's target ratio must be 2, 3, 4, or 5")
 		}
 		if !slices.Contains(SignalWindows, item.Window) {
-			return Entry{}, fmt.Errorf("%w: a signal's window must be 3, 6, 12, or 24 candles", ErrInvalidArgument)
+			return Entry{}, invalid("a signal's window must be 3, 6, 12, or 24 candles")
 		}
 	case item.TargetRatio != 0 || item.Window != 0:
-		return Entry{}, fmt.Errorf("%w: only a signal has a target ratio and a window", ErrInvalidArgument)
+		return Entry{}, invalid("only a signal has a target ratio and a window")
 	case item.Direction == DirectionSimple || item.Direction == DirectionSideways:
-		return Entry{}, fmt.Errorf("%w: a strategy trades long or short; only a signal may be simple or expect a sideways move", ErrInvalidArgument)
+		return Entry{}, invalid("a strategy trades long or short; only a signal may be simple or expect a sideways move")
 	case item.Direction == DirectionShort && (item.TakeProfitExpression == "" || item.StopLossExpression == ""):
-		return Entry{}, fmt.Errorf("%w: a short strategy needs a take profit and a stop loss", ErrInvalidArgument)
+		return Entry{}, invalid("a short strategy needs a take profit and a stop loss")
 	}
 	return service.compileEntry(item)
 }

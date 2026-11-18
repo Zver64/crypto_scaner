@@ -7,15 +7,13 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"reflect"
 	"slices"
-	"strconv"
 	"strings"
-	"time"
 
 	"crypto-scanner/internal/alerts"
 	"crypto-scanner/internal/analysis"
 	"crypto-scanner/internal/favorites"
-	"crypto-scanner/internal/market"
 	"crypto-scanner/internal/markettable"
 
 	"github.com/getkin/kin-openapi/openapi3"
@@ -35,13 +33,11 @@ type Analysis interface {
 	AnalyzeSymbol(context.Context, analysis.SymbolRequest) (analysis.SymbolResult, error)
 }
 
-// MarketTables runs market, COIN-M, and favorites analyses and presents them
-// as tables.
+// MarketTables runs the analyses of market universes and presents them as
+// tables.
 type MarketTables interface {
-	Search(context.Context, analysis.SearchRequest) (markettable.Result, error)
-	CoinM(context.Context, analysis.SearchRequest) (markettable.Result, error)
-	CoinMSymbols(context.Context) ([]string, error)
-	Favorites(context.Context, []favorites.Favorite, analysis.SearchRequest) (markettable.Result, error)
+	Analyze(ctx context.Context, userID int64, universe markettable.Universe, request analysis.SearchRequest) (markettable.Result, error)
+	Symbols(ctx context.Context, userID int64, universe markettable.Universe) ([]string, error)
 }
 
 type Favorites interface {
@@ -86,41 +82,41 @@ type Dependencies struct {
 	HistoryLoads HistoryLoads
 }
 
+// check names the first dependency that is missing.
+func (dependencies Dependencies) check() error {
+	value := reflect.ValueOf(dependencies)
+	for i := range value.NumField() {
+		if value.Field(i).IsNil() {
+			return fmt.Errorf("HTTP API dependency %s is required", value.Type().Field(i).Name)
+		}
+	}
+	return nil
+}
+
 type Options struct {
 	APIDocsEnabled bool
 }
 
+// api serves the operations of the contract with the dependencies.
 type api struct {
-	logger     *slog.Logger
-	readiness  Readiness
-	analysis   Analysis
-	tables     MarketTables
-	history    CandleHistory
-	gridLimits GridLimits
-	favorites  Favorites
-	alerts     PriceAlerts
-	chart      ChartService
-	sessions   Sessions
-	apiTokens  APITokens
-
-	scannerIndicators ScannerIndicators
-	indicatorTypes    IndicatorTypes
-	users             Users
-	strategies        Strategies
-	historyLoads      HistoryLoads
+	Dependencies
+	logger *slog.Logger
 }
 
 var _ StrictServerInterface = (*api)(nil)
 
 // New returns the service HTTP handler with process-wide middleware applied.
-func New(logger *slog.Logger, dependencies Dependencies, options Options) http.Handler {
-	return newHandler(logger, dependencies, options, requireSession(dependencies.Sessions, logger))
+// It fails when a dependency is missing.
+func New(logger *slog.Logger, dependencies Dependencies, options Options) (http.Handler, error) {
+	if err := dependencies.check(); err != nil {
+		return nil, err
+	}
+	return newHandler(logger, dependencies, options, requireSession(dependencies.Sessions, logger)), nil
 }
 
 func newHandler(logger *slog.Logger, dependencies Dependencies, options Options, authenticate func(http.Handler) http.Handler) http.Handler {
 	operations := http.NewServeMux()
-	handlers := &api{logger: logger, readiness: dependencies.Readiness, analysis: dependencies.Analysis, tables: dependencies.MarketTables, history: dependencies.History, gridLimits: dependencies.GridLimits, favorites: dependencies.Favorites, alerts: dependencies.Alerts, chart: dependencies.Chart, sessions: dependencies.Sessions, apiTokens: dependencies.APITokens,
-		scannerIndicators: dependencies.ScannerIndicators, indicatorTypes: dependencies.IndicatorTypes, users: dependencies.Users, strategies: dependencies.Strategies, historyLoads: dependencies.HistoryLoads}
+	handlers := &api{Dependencies: dependencies, logger: logger}
 	strict := NewStrictHandlerWithOptions(handlers, nil, StrictHTTPServerOptions{
 		RequestErrorHandlerFunc: openAPIRequestError,
 		ResponseErrorHandlerFunc: func(response http.ResponseWriter, request *http.Request, err error) {
@@ -206,25 +202,20 @@ func registerSecuredOperations(router *http.ServeMux, spec *openapi3.T, authenti
 	return nil
 }
 
-func openAPIValidationError(_ context.Context, err error, response http.ResponseWriter, request *http.Request, options nethttpmiddleware.ErrorHandlerOpts) {
-	writeAPIError(response, options.StatusCode, "invalid_argument", validationMessage(request, options, err), nil)
-}
-
-func validationMessage(request *http.Request, options nethttpmiddleware.ErrorHandlerOpts, err error) string {
-	switch {
-	case strings.HasPrefix(request.URL.Path, "/api/v1/analysis/"):
-		return "Invalid analysis argument"
-	case isCandleHistoryPath(request.URL.Path):
-		return candleValidationMessage(request, options)
-	default:
-		return requestErrorMessage(err)
-	}
+func openAPIValidationError(_ context.Context, err error, response http.ResponseWriter, _ *http.Request, options nethttpmiddleware.ErrorHandlerOpts) {
+	writeAPIError(response, options.StatusCode, "invalid_argument", requestErrorMessage(err), nil)
 }
 
 // requestErrorMessage names the parameter or body field a request fails
 // validation on and why, without the schema and value dumps of kin-openapi
 // errors.
 func requestErrorMessage(err error) string {
+	// The generated handlers bind parameters whose format the validator
+	// leaves unchecked, such as date-times.
+	var format *InvalidParamFormatError
+	if errors.As(err, &format) {
+		return fmt.Sprintf("Invalid parameter %q: invalid format", format.ParamName)
+	}
 	var failure *openapi3filter.RequestError
 	if !errors.As(err, &failure) {
 		return "Invalid request"
@@ -278,38 +269,6 @@ func conciseReason(reason string) string {
 	return reason
 }
 
-func isCandleHistoryPath(path string) bool {
-	return strings.HasPrefix(path, "/api/v1/instruments/") && strings.HasSuffix(path, "/candles")
-}
-
-func candleValidationMessage(request *http.Request, options nethttpmiddleware.ErrorHandlerOpts) string {
-	query := request.URL.Query()
-	if !market.CandleInterval(query.Get("interval")).Valid() {
-		return "Unsupported candle interval"
-	}
-	if values, present := query["limit"]; present {
-		if len(values) != 1 {
-			return "Invalid candle page limit"
-		}
-		limit, err := strconv.Atoi(values[0])
-		if err != nil || limit < 1 || limit > maxCandlePageSize {
-			return "Invalid candle page limit"
-		}
-	}
-	if values, present := query["before"]; present {
-		if len(values) != 1 {
-			return "Invalid candle cursor"
-		}
-		if _, err := time.Parse(time.RFC3339, values[0]); err != nil {
-			return "Invalid candle cursor"
-		}
-	}
-	if options.MatchedRoute != nil && strings.TrimSpace(options.MatchedRoute.PathParams["symbol"]) == "" {
-		return "Symbol is required"
-	}
-	return "Invalid request"
-}
-
 // limitRequestBody bounds the body of every request, whatever its method.
 func limitRequestBody(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
@@ -327,15 +286,12 @@ func defaultJSONContentType(next http.Handler) http.Handler {
 	})
 }
 
-func openAPIRequestError(response http.ResponseWriter, request *http.Request, err error) {
-	writeAPIError(response, http.StatusBadRequest, "invalid_argument", validationMessage(request, nethttpmiddleware.ErrorHandlerOpts{}, err), nil)
+func openAPIRequestError(response http.ResponseWriter, _ *http.Request, err error) {
+	writeAPIError(response, http.StatusBadRequest, "invalid_argument", requestErrorMessage(err), nil)
 }
 
-func (api *api) GetLiveness(ctx context.Context, _ GetLivenessRequestObject) (GetLivenessResponseObject, error) {
-	return GetLiveness200JSONResponse{
-		Body:    LivenessResponse{Status: LivenessResponseStatusOk},
-		Headers: GetLiveness200ResponseHeaders{XRequestID: RequestIdentifier(ctx)},
-	}, nil
+func (api *api) GetLiveness(_ context.Context, _ GetLivenessRequestObject) (GetLivenessResponseObject, error) {
+	return GetLiveness200JSONResponse{Status: LivenessResponseStatusOk}, nil
 }
 
 func (api *api) GetReadiness(ctx context.Context, _ GetReadinessRequestObject) (GetReadinessResponseObject, error) {
@@ -346,11 +302,11 @@ func (api *api) GetReadiness(ctx context.Context, _ GetReadinessRequestObject) (
 	}{Database: "unavailable", Migrations: "unavailable", MarketSync: "unavailable"}
 	status := http.StatusServiceUnavailable
 	state := NotReady
-	if api.readiness.DatabaseReady(ctx) {
+	if api.Readiness.DatabaseReady(ctx) {
 		checks.Database = "ok"
-		if api.readiness.MigrationsReady(ctx) {
+		if api.Readiness.MigrationsReady(ctx) {
 			checks.Migrations = "ok"
-			if api.readiness.SuccessfulMarketSyncExists(ctx) {
+			if api.Readiness.SuccessfulMarketSyncExists(ctx) {
 				checks.MarketSync = "ok"
 				status = http.StatusOK
 				state = Ready
@@ -362,7 +318,7 @@ func (api *api) GetReadiness(ctx context.Context, _ GetReadinessRequestObject) (
 	body := ReadinessResponse{Status: state}
 	body.Checks = checks
 	if status == http.StatusOK {
-		return GetReadiness200JSONResponse{Body: body, Headers: GetReadiness200ResponseHeaders{XRequestID: RequestIdentifier(ctx)}}, nil
+		return GetReadiness200JSONResponse(body), nil
 	}
-	return GetReadiness503JSONResponse{Body: body, Headers: GetReadiness503ResponseHeaders{XRequestID: RequestIdentifier(ctx)}}, nil
+	return GetReadiness503JSONResponse(body), nil
 }

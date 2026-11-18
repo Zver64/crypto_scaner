@@ -1,6 +1,6 @@
 import { NativeSelect, Stack } from "@mantine/core";
 
-import type { StrategyIndicatorParameter } from "@/api/generated/models";
+import type { IndicatorParameter } from "@/api/generated/models";
 import { indicatorSourceItem } from "@/features/strategy-settings/constants";
 import { NestedIndicatorInput } from "@/features/strategy-settings/nested-indicator-input";
 import type {
@@ -19,7 +19,7 @@ interface IndicatorSourceInputProps {
 	invalid: boolean;
 	issuePaths: readonly PropertyKey[][];
 	onChange(arg: IndicatorArgument): void;
-	parameter: StrategyIndicatorParameter;
+	parameter: IndicatorParameter;
 	// The indicators the source may read; undefined offers only its choices.
 	sources?: StrategyIndicatorVariable[];
 }

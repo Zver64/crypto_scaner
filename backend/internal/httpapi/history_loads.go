@@ -20,7 +20,7 @@ func (api *api) StartCandleHistoryLoad(ctx context.Context, request StartCandleH
 	for i, interval := range request.Body.Intervals {
 		intervals[i] = market.CandleInterval(interval)
 	}
-	job, err := api.historyLoads.Start(ctx, request.Body.Symbols, intervals, request.Body.Depth)
+	job, err := api.HistoryLoads.Start(ctx, request.Body.Symbols, intervals, request.Body.Depth)
 	switch {
 	case err == nil:
 		return StartCandleHistoryLoad202JSONResponse(historyJobDTO(job)), nil
@@ -30,14 +30,14 @@ func (api *api) StartCandleHistoryLoad(ctx context.Context, request StartCandleH
 		return StartCandleHistoryLoad404JSONResponse{symbolNotFound(ctx).symbolNotFound()}, nil
 	case errors.Is(err, marketsync.ErrHistoryLoadRunning):
 		body := newAPIError(ctx, http.StatusConflict, "history_load_running", "Another history load is running", nil).body
-		return StartCandleHistoryLoad409JSONResponse{HistoryLoadRunningJSONResponse{Body: body, Headers: HistoryLoadRunningResponseHeaders{XRequestID: body.RequestId}}}, nil
+		return StartCandleHistoryLoad409JSONResponse{HistoryLoadRunningJSONResponse(body)}, nil
 	default:
 		return StartCandleHistoryLoad500JSONResponse{api.internalError(ctx, "start_candle_history_load", err)}, nil
 	}
 }
 
 func (api *api) GetCandleHistoryLoad(context.Context, GetCandleHistoryLoadRequestObject) (GetCandleHistoryLoadResponseObject, error) {
-	job, ok := api.historyLoads.Job()
+	job, ok := api.HistoryLoads.Job()
 	if !ok {
 		return GetCandleHistoryLoad204Response{}, nil
 	}

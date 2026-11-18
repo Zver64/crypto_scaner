@@ -9,9 +9,9 @@ import (
 	"crypto-scanner/internal/analysis"
 )
 
-// apiError is an error body with its HTTP status. The helpers below convert it
-// into generated response components that declare X-Request-ID; components
-// without response headers use body directly.
+// apiError is an error body with its HTTP status. The helpers below convert
+// it into the generated response components; the request middleware sets
+// X-Request-ID on every response, and the body carries it as request_id.
 type apiError struct {
 	status int
 	body   ErrorResponse
@@ -21,29 +21,25 @@ func newAPIError(ctx context.Context, status int, code, message string, details 
 	return apiError{status: status, body: ErrorResponse{Error: APIError{Code: APIErrorCode(code), Message: message, Details: details}, RequestId: RequestIdentifier(ctx)}}
 }
 
-func (e apiError) badRequest() BadRequestJSONResponse {
-	return BadRequestJSONResponse{Body: e.body, Headers: BadRequestResponseHeaders{XRequestID: e.body.RequestId}}
-}
+func (e apiError) badRequest() BadRequestJSONResponse { return BadRequestJSONResponse(e.body) }
 
 func (e apiError) symbolNotFound() SymbolNotFoundJSONResponse {
-	return SymbolNotFoundJSONResponse{Body: e.body, Headers: SymbolNotFoundResponseHeaders{XRequestID: e.body.RequestId}}
+	return SymbolNotFoundJSONResponse(e.body)
 }
 
 func (e apiError) insufficientData() InsufficientDataJSONResponse {
-	return InsufficientDataJSONResponse{Body: e.body, Headers: InsufficientDataResponseHeaders{XRequestID: e.body.RequestId}}
+	return InsufficientDataJSONResponse(e.body)
 }
 
 func (e apiError) unprocessable() UnprocessableAnalysisJSONResponse {
-	return UnprocessableAnalysisJSONResponse{Body: e.body, Headers: UnprocessableAnalysisResponseHeaders{XRequestID: e.body.RequestId}}
+	return UnprocessableAnalysisJSONResponse(e.body)
 }
 
 func (e apiError) unavailable() AnalysisUnavailableJSONResponse {
-	return AnalysisUnavailableJSONResponse{Body: e.body, Headers: AnalysisUnavailableResponseHeaders{XRequestID: e.body.RequestId}}
+	return AnalysisUnavailableJSONResponse(e.body)
 }
 
-func (e apiError) internal() InternalErrorJSONResponse {
-	return InternalErrorJSONResponse{Body: e.body, Headers: InternalErrorResponseHeaders{XRequestID: e.body.RequestId}}
-}
+func (e apiError) internal() InternalErrorJSONResponse { return InternalErrorJSONResponse(e.body) }
 
 func invalidArgument(ctx context.Context, message string) apiError {
 	return newAPIError(ctx, http.StatusBadRequest, "invalid_argument", message, nil)

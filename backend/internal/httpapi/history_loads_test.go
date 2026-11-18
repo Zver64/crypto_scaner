@@ -21,7 +21,7 @@ func TestCandleHistoryLoadsStartAJobAndReportIt(t *testing.T) {
 	started := time.Date(2026, 10, 7, 12, 0, 0, 0, time.UTC)
 	oldest := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 	loads := &historyLoads{}
-	handler := httpapi.New(logging.New(io.Discard, "error", logging.Options{}), httpapi.Dependencies{
+	handler := newTestHandler(logging.New(io.Discard, "error", logging.Options{}), httpapi.Dependencies{
 		Readiness: readinessStub{}, Analysis: unavailableAnalysis{}, Sessions: roleSessions{}, HistoryLoads: loads,
 	}, httpapi.Options{})
 	serve := func(method, token, body string) *httptest.ResponseRecorder {

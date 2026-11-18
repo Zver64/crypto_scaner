@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { backtestStrategy } from "@/api/generated/api";
+import { SavedBacktestedStrategyKind } from "@/api/generated/models";
 import { runBacktests } from "@/features/strategy-backtest/run-backtests";
 import type {
 	BacktestRun,
@@ -35,8 +36,15 @@ export function useBacktestRun() {
 				controller.signal,
 				async (symbol, chart, signal) => {
 					const response = await backtestStrategy(
-						snapshot.strategy,
-						{ symbol, chart, ...backtestPeriod(snapshot.from, snapshot.to) },
+						{
+							strategy: {
+								kind: SavedBacktestedStrategyKind.saved,
+								id: snapshot.strategy,
+							},
+							symbol,
+							chart,
+							...backtestPeriod(snapshot.from, snapshot.to),
+						},
 						{ signal },
 					);
 					return response.data;

@@ -58,6 +58,28 @@ func (stub perpetualsStub) ListCoinMPerpetuals(context.Context) ([]string, error
 
 func (closedStub) Latest(context.Context, []int64) map[int64][]closedindicator.Value { return nil }
 
+// favoritesStub are the favorites of every user.
+type favoritesStub []favorites.Favorite
+
+func (stub favoritesStub) List(context.Context, int64) ([]favorites.Favorite, error) {
+	return stub, nil
+}
+
+type instrumentsStub []market.Instrument
+
+func (stub instrumentsStub) ListActiveInstruments(context.Context) ([]market.Instrument, error) {
+	return stub, nil
+}
+
+func newService(t *testing.T, analyzer markettable.Analyzer, perpetuals perpetualsStub, items favoritesStub, table markettable.Catalog) *markettable.Service {
+	t.Helper()
+	service, err := markettable.NewService(analyzer, closedStub{}, pricesStub{}, perpetuals, instrumentsStub{}, items, markettable.Catalogs{Market: table, CoinM: table, Favorites: table})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return service
+}
+
 func TestFavoritesAnalyzesActiveFavoritesAndKeepsEveryRow(t *testing.T) {
 	table, err := markettable.NewCatalog(noConfiguredColumns{}, markettable.Sort{Column: "alert_count", Direction: markettable.Descending},
 		markettable.Column{ID: "symbol", Title: "Symbol", Kind: markettable.KindText, Source: markettable.Symbol{}},
@@ -68,16 +90,12 @@ func TestFavoritesAnalyzesActiveFavoritesAndKeepsEveryRow(t *testing.T) {
 		t.Fatal(err)
 	}
 	analyzer := &analyzerStub{}
-	service, err := markettable.NewService(analyzer, closedStub{}, pricesStub{}, perpetualsStub{}, table, table, table)
-	if err != nil {
-		t.Fatal(err)
-	}
-	items := []favorites.Favorite{
+	service := newService(t, analyzer, perpetualsStub{}, favoritesStub{
 		{InstrumentID: 1, Symbol: "BTCUSDT", Active: true},
 		{InstrumentID: 2, Symbol: "ETHUSDT", Active: true},
 		{InstrumentID: 3, Symbol: "OLDUSDT", AlertCount: 2},
-	}
-	result, err := service.Favorites(context.Background(), items, analysis.SearchRequest{})
+	}, table)
+	result, err := service.Analyze(context.Background(), 1, markettable.UniverseFavorites, analysis.SearchRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,11 +122,8 @@ func TestCoinMAnalyzesSpotUSDTPairsOfPerpetualCoins(t *testing.T) {
 		t.Fatal(err)
 	}
 	analyzer := &analyzerStub{}
-	service, err := markettable.NewService(analyzer, closedStub{}, pricesStub{}, perpetualsStub{"BTC", "ETH"}, table, table, table)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := service.CoinM(context.Background(), analysis.SearchRequest{}); err != nil {
+	service := newService(t, analyzer, perpetualsStub{"BTC", "ETH"}, nil, table)
+	if _, err := service.Analyze(context.Background(), 1, markettable.UniverseCoinM, analysis.SearchRequest{}); err != nil {
 		t.Fatal(err)
 	}
 	if len(analyzer.symbols) != 2 || analyzer.symbols[0] != "BTCUSDT" || analyzer.symbols[1] != "ETHUSDT" {
@@ -123,16 +138,12 @@ func TestFavoritesMarkTheMarketsOfEveryCoin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := markettable.NewService(&analyzerStub{}, closedStub{}, pricesStub{}, perpetualsStub{"BTC", "OLD"}, table, table, table)
-	if err != nil {
-		t.Fatal(err)
-	}
-	items := []favorites.Favorite{
+	service := newService(t, &analyzerStub{}, perpetualsStub{"BTC", "OLD"}, favoritesStub{
 		{InstrumentID: 1, Symbol: "BTCUSDT", Active: true},
 		{InstrumentID: 2, Symbol: "ETHUSDT", Active: true},
 		{InstrumentID: 3, Symbol: "OLDUSDT"},
-	}
-	result, err := service.Favorites(context.Background(), items, analysis.SearchRequest{})
+	}, table)
+	result, err := service.Analyze(context.Background(), 1, markettable.UniverseFavorites, analysis.SearchRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}

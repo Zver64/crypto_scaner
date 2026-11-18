@@ -2,9 +2,7 @@ package httpapi
 
 import (
 	"context"
-	"math"
 	"net/http"
-	"strings"
 
 	"crypto-scanner/internal/analysis"
 	"crypto-scanner/internal/markettable"
@@ -34,16 +32,13 @@ func (api *api) AnalyzeInstrument(ctx context.Context, request AnalyzeInstrument
 	if request.Body != nil {
 		body = *request.Body
 	}
-	result, err := api.analysis.AnalyzeSymbol(ctx, analysis.SymbolRequest{Symbol: request.Symbol, Criteria: criterionConfigs(body.Criteria)})
+	result, err := api.Analysis.AnalyzeSymbol(ctx, analysis.SymbolRequest{Symbol: request.Symbol, Criteria: criterionConfigs(body.Criteria)})
 	if err != nil {
 		return api.analyzeInstrumentError(ctx, err, request.Symbol), nil
 	}
 	return AnalyzeInstrument200JSONResponse{
-		Body: InstrumentAnalysisResponse{
-			Symbol: result.Symbol, Matched: result.Matched,
-			Evaluations: responseEvaluations(result.Evaluations), Warnings: responseWarnings(result.Warnings),
-		},
-		Headers: AnalyzeInstrument200ResponseHeaders{XRequestID: RequestIdentifier(ctx)},
+		Symbol: result.Symbol, Matched: result.Matched,
+		Evaluations: responseEvaluations(result.Evaluations), Warnings: responseWarnings(result.Warnings),
 	}, nil
 }
 
@@ -52,25 +47,22 @@ func (api *api) AnalyzeMarket(ctx context.Context, request AnalyzeMarketRequestO
 	if request.Body != nil {
 		body = *request.Body
 	}
-	search := api.tables.Search
-	if body.Universe != nil && *body.Universe == CoinmPerpetual {
-		search = api.tables.CoinM
+	universe := markettable.UniverseSpot
+	if body.Universe != nil {
+		universe = markettable.Universe(*body.Universe)
 	}
-	result, err := search(ctx, marketSearchRequest(body))
+	result, err := api.MarketTables.Analyze(ctx, currentUserID(ctx), universe, marketSearchRequest(body))
 	if err != nil {
 		return api.analyzeMarketError(ctx, err), nil
 	}
-	return AnalyzeMarket200JSONResponse{
-		Body:    marketAnalysisResponse(result),
-		Headers: AnalyzeMarket200ResponseHeaders{XRequestID: RequestIdentifier(ctx)},
-	}, nil
+	return AnalyzeMarket200JSONResponse(marketAnalysisResponse(result)), nil
 }
 
 func marketAnalysisResponse(analyzed markettable.Result) MarketAnalysisResponse {
 	result := analyzed.Search
 	items := make([]MarketAnalysisItem, len(result.Items))
 	for i, item := range result.Items {
-		items[i] = MarketAnalysisItem{Symbol: item.Symbol, Matched: item.Matched, Evaluations: responseMarketScanEvaluations(item.Evaluations)}
+		items[i] = MarketAnalysisItem{Symbol: item.Symbol, Matched: item.Matched, Evaluations: responseEvaluations(item.Evaluations)}
 	}
 	unresolved := make([]UnresolvedInstrument, len(result.Unresolved))
 	for i, item := range result.Unresolved {
@@ -106,9 +98,9 @@ func marketTableResponse(table markettable.Table) MarketTable {
 			}
 			cells[id] = response
 		}
-		markets := make([]MarketUniverse, len(row.Markets))
+		markets := make([]Market, len(row.Markets))
 		for j, market := range row.Markets {
-			markets[j] = MarketUniverse(market)
+			markets[j] = Market(market)
 		}
 		rows[i] = TableRow{Symbol: row.Symbol, Markets: markets, Cells: cells}
 	}
@@ -154,8 +146,6 @@ func (api *api) analyzeMarketError(ctx context.Context, err error) AnalyzeMarket
 	}
 }
 
-func roundPercentage(value float64) float64 { return math.Round(value*10_000) / 10_000 }
-
 func responseEvaluations(evaluations []analysis.Evaluation) []Evaluation {
 	items := make([]Evaluation, len(evaluations))
 	for i, evaluation := range evaluations {
@@ -164,20 +154,6 @@ func responseEvaluations(evaluations []analysis.Evaluation) []Evaluation {
 			metrics[name] = value
 		}
 		items[i] = Evaluation{Key: evaluation.Key, Name: evaluation.Name, Label: evaluation.Label, Matched: evaluation.Matched, Metrics: metrics, CandleCount: evaluation.CandleCount, From: evaluation.From.UTC(), To: evaluation.To.UTC()}
-	}
-	return items
-}
-
-// Market Scan retains its presentation rounding. Instrument Analysis carries
-// original metrics so derived recommendations can be calculated before rounding.
-func responseMarketScanEvaluations(evaluations []analysis.Evaluation) []Evaluation {
-	items := responseEvaluations(evaluations)
-	for index := range items {
-		for name, value := range items[index].Metrics {
-			if strings.HasSuffix(name, "_percent") {
-				items[index].Metrics[name] = roundPercentage(value)
-			}
-		}
 	}
 	return items
 }

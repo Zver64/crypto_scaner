@@ -18,7 +18,7 @@ type APITokens interface {
 }
 
 func (api *api) ListApiTokens(ctx context.Context, _ ListApiTokensRequestObject) (ListApiTokensResponseObject, error) {
-	tokens, err := api.apiTokens.ListAPITokens(ctx, currentUserID(ctx))
+	tokens, err := api.APITokens.ListAPITokens(ctx, currentUserID(ctx))
 	if err != nil {
 		return ListApiTokens500JSONResponse{api.internalError(ctx, "list_api_tokens", err)}, nil
 	}
@@ -33,7 +33,7 @@ func (api *api) ListApiTokens(ctx context.Context, _ ListApiTokensRequestObject)
 }
 
 func (api *api) CreateApiToken(ctx context.Context, request CreateApiTokenRequestObject) (CreateApiTokenResponseObject, error) {
-	issued, err := api.apiTokens.CreateAPIToken(ctx, currentUserID(ctx), request.Body.Name)
+	issued, err := api.APITokens.CreateAPIToken(ctx, currentUserID(ctx), request.Body.Name)
 	switch {
 	case err == nil:
 		return CreateApiToken201JSONResponse{Id: issued.ID, Name: issued.Name, CreatedAt: issued.CreatedAt, Token: issued.Token}, nil
@@ -45,7 +45,7 @@ func (api *api) CreateApiToken(ctx context.Context, request CreateApiTokenReques
 }
 
 func (api *api) DeleteApiToken(ctx context.Context, request DeleteApiTokenRequestObject) (DeleteApiTokenResponseObject, error) {
-	err := api.apiTokens.DeleteAPIToken(ctx, currentUserID(ctx), request.TokenId)
+	err := api.APITokens.DeleteAPIToken(ctx, currentUserID(ctx), request.TokenId)
 	switch {
 	case err == nil:
 		return DeleteApiToken204Response{}, nil

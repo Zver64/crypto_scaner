@@ -27,14 +27,8 @@ func TestMultiCoinBacktestsSavedAndDrafts(t *testing.T) {
 		t.Run(strings.Join(args[:2], "-"), func(t *testing.T) {
 			var home string
 			var calls []string
-			validations := 0
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
-				if r.URL.Path == "/api/v1/admin/strategy-validations" {
-					validations++
-					io.WriteString(w, `{"errors":[],"expression":"","indicators":[]}`)
-					return
-				}
 				lock := flock.New(filepath.Join(home, "scanner", "backtest.lock"))
 				locked, err := lock.TryLock()
 				if err != nil || locked {
@@ -43,24 +37,20 @@ func TestMultiCoinBacktestsSavedAndDrafts(t *testing.T) {
 					}
 					t.Error("batch did not retain its machine lock")
 				}
-				symbol := r.URL.Query().Get("symbol")
-				if r.Method == http.MethodPost {
-					var body apiclient.StrategyBacktestInput
-					if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-						t.Error(err)
-					}
-					symbol = body.Symbol
-					if body.Chart != nil && *body.Chart {
-						t.Error("draft requested chart")
-					}
-					if body.Expression != "h_close > 1" {
-						t.Errorf("unexpected expression: %s", body.Expression)
-					}
-				} else if r.URL.Query().Get("chart") != "" {
-					t.Error("saved backtest requested chart")
+				var body apiclient.StrategyBacktestInput
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Error(err)
 				}
-				calls = append(calls, symbol)
-				io.WriteString(w, strings.ReplaceAll(backtestResponse, "BTCUSDT", symbol))
+				if body.Chart != nil && *body.Chart {
+					t.Error("backtest requested chart")
+				}
+				backtested, err := body.Strategy.ValueByDiscriminator()
+				draft, isDraft := backtested.(apiclient.DraftBacktestedStrategy)
+				if _, saved := backtested.(apiclient.SavedBacktestedStrategy); err != nil || !saved && (!isDraft || draft.Rules.Expression != "h_close > 1") {
+					t.Errorf("unexpected body: %+v", body)
+				}
+				calls = append(calls, body.Symbol)
+				io.WriteString(w, strings.ReplaceAll(backtestResponse, "BTCUSDT", body.Symbol))
 			}))
 			defer server.Close()
 			home = writeProfile(t, server.URL)
@@ -81,13 +71,6 @@ func TestMultiCoinBacktestsSavedAndDrafts(t *testing.T) {
 			if output.Status != "completed" || len(output.Items) != 2 || output.Items[1].Result.Symbol != "ETHUSDT" {
 				t.Fatalf("result = %+v", output)
 			}
-			want := 1
-			if args[0] == "backtest" {
-				want = 0
-			}
-			if validations != want {
-				t.Fatalf("validated %d times; want %d", validations, want)
-			}
 		})
 	}
 }
@@ -107,8 +90,8 @@ func TestMultiCoinPartialAndGlobalFailures(t *testing.T) {
 		{500, "internal_error", false},
 	} {
 		t.Run(test.code, func(t *testing.T) {
-			first := "GET /api/v1/admin/strategies/00000000-0000-7000-8000-000000000003/backtest?symbol=BTCUSDT"
-			second := "GET /api/v1/admin/strategies/00000000-0000-7000-8000-000000000003/backtest?symbol=ETHUSDT"
+			first := "POST /api/v1/admin/strategy-backtests BTCUSDT"
+			second := "POST /api/v1/admin/strategy-backtests ETHUSDT"
 			api, server := newFakeAPI(t, map[string]string{
 				first:  fmt.Sprintf(`{"error":{"code":"%s","message":"Failed","details":{"reason":"test"}},"request_id":"batch-request"}`, test.code),
 				second: strings.ReplaceAll(backtestResponse, "BTCUSDT", "ETHUSDT"),
@@ -144,7 +127,11 @@ func TestMultiCoinPartialAndGlobalFailures(t *testing.T) {
 func TestMultiCoinTruncatedResponseStopsQueueAndRetainsResults(t *testing.T) {
 	var calls []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		symbol := r.URL.Query().Get("symbol")
+		var body apiclient.StrategyBacktestInput
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		symbol := body.Symbol
 		calls = append(calls, symbol)
 		w.Header().Set("Content-Type", "application/json")
 		if symbol == "ETHUSDT" {

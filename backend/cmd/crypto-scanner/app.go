@@ -143,7 +143,8 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 	if err != nil {
 		return app{}, fmt.Errorf("initialize COIN-M perpetuals synchronizer: %w", err)
 	}
-	marketTables, err := markettable.NewService(analysisService, closedIndicators, store, store, marketTable, coinMTable, favoritesTable)
+	marketTables, err := markettable.NewService(analysisService, closedIndicators, store, store, store, favoriteService,
+		markettable.Catalogs{Market: marketTable, CoinM: coinMTable, Favorites: favoritesTable})
 	if err != nil {
 		return app{}, fmt.Errorf("initialize market table service: %w", err)
 	}
@@ -190,7 +191,7 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 
 	sessions := auth.NewSessions(store, authtelegram.New(cfg.TelegramBotToken, cfg.TelegramInitDataMaxAge, authtelegram.Options{}),
 		cfg.AdminTelegramID, cfg.SessionIdleTTL, cfg.SessionAbsoluteTTL, logger, auth.SessionOptions{})
-	handler := httpapi.New(logger, httpapi.Dependencies{
+	handler, err := httpapi.New(logger, httpapi.Dependencies{
 		Readiness:    store,
 		Analysis:     analysisService,
 		MarketTables: marketTables,
@@ -209,6 +210,9 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 		Strategies:        strategies,
 		HistoryLoads:      historyLoader,
 	}, httpapi.Options{APIDocsEnabled: cfg.APIDocsEnabled})
+	if err != nil {
+		return app{}, fmt.Errorf("initialize HTTP API: %w", err)
+	}
 	return app{handler: handler, notifier: notifier, services: []service{
 		{"market scheduler", scheduler},
 		{"live kline stream", klineStream},

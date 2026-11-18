@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -19,7 +18,6 @@ import (
 	"crypto-scanner/internal/apiclient"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
 	"golang.org/x/term"
 )
 
@@ -56,7 +54,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		return 1
 	}
 	failed := c.describe(err)
-	c.json = errorOutputJSON(root, args)
+	c.json = errorOutputJSON(args)
 	if c.json {
 		raw, _ := json.Marshal(failed.response())
 		fmt.Fprintln(stderr, string(raw))
@@ -66,67 +64,25 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	return 1
 }
 
-// errorOutputJSON uses pflag's argument consumption but ignores validation
-// failures, so a later --json still selects the error format. Copies keep
-// recovery from changing the command's actual flag values.
-func errorOutputJSON(root *cobra.Command, args []string) bool {
-	var enabled bool
-	flags := pflag.NewFlagSet("error output", pflag.ContinueOnError)
-	flags.SetOutput(io.Discard)
-	flags.ParseErrorsWhitelist.UnknownFlags = true
-	add := func(source *pflag.FlagSet) {
-		source.VisitAll(func(flag *pflag.Flag) {
-			if flags.Lookup(flag.Name) != nil {
-				return
-			}
-			copied := *flag
-			value := &errorFlagValue{kind: flag.Value.Type()}
-			if flag.Name == "json" {
-				value.enabled = &enabled
-			}
-			copied.Value = value
-			flags.AddFlag(&copied)
-		})
-	}
-	add(root.PersistentFlags())
-	if command, _, _ := root.Find(args); command != nil {
-		add(command.Flags())
-		add(command.InheritedFlags())
-	}
-	args = slices.Clone(args)
-	for {
-		enabled = false
-		err := flags.Parse(args)
-		var syntax *pflag.InvalidSyntaxError
-		if !errors.As(err, &syntax) {
+// errorOutputJSON scans args for the last --json or --json=BOOL before a
+// "--" that ends the flags, so --json selects JSON errors even when the
+// command line fails to parse. It does not tell a flag from the value of
+// another flag, such as --message --json.
+func errorOutputJSON(args []string) bool {
+	enabled := false
+	for _, arg := range args {
+		if arg == "--" {
 			break
 		}
-		// Keep each token in place (it may also occur as a string flag's
-		// value), but neutralize the invalid spelling for the recovery pass.
-		// The original Cobra error is still the one reported to the user.
-		for i, arg := range args {
-			if arg == syntax.GetSpecifiedFlag() {
-				args[i] = "invalid-flag:" + arg
+		if arg == "--json" {
+			enabled = true
+		} else if value, ok := strings.CutPrefix(arg, "--json="); ok {
+			if parsed, err := strconv.ParseBool(value); err == nil {
+				enabled = parsed
 			}
 		}
 	}
 	return enabled
-}
-
-type errorFlagValue struct {
-	kind    string
-	enabled *bool
-}
-
-func (v *errorFlagValue) String() string { return "" }
-func (v *errorFlagValue) Type() string   { return v.kind }
-func (v *errorFlagValue) Set(value string) error {
-	if v.enabled != nil {
-		if enabled, err := strconv.ParseBool(value); err == nil {
-			*v.enabled = enabled
-		}
-	}
-	return nil
 }
 
 func (c *cli) command() *cobra.Command {

@@ -10,6 +10,10 @@ info:
     `POST /api/v1/auth/session` and send `Authorization: Bearer <token>` to every
     other operation. A request rejected with `401` needs a new session.
 
+    Every response carries an `X-Request-ID` header: the caller's own
+    `X-Request-ID` when it is a safe value, otherwise one the server assigns.
+    Error bodies repeat it as `request_id`.
+
     The client offers the WebSocket subprotocol `crypto-scanner.live.v1` followed by
     its session token as a second subprotocol (`Sec-WebSocket-Protocol`); the token is
     never placed in the URL. The handshake fails with `401` for a missing or invalid
@@ -35,14 +39,9 @@ paths:
       operationId: getLiveness
       summary: Check whether the process is alive
       tags: [Health]
-      parameters:
-        - $ref: "#/components/parameters/RequestID"
       responses:
         "200":
           description: The process is running.
-          headers:
-            X-Request-ID:
-              $ref: "#/components/headers/RequestID"
           content:
             application/json:
               schema:
@@ -52,23 +51,15 @@ paths:
       operationId: getReadiness
       summary: Check whether required service dependencies are ready
       tags: [Health]
-      parameters:
-        - $ref: "#/components/parameters/RequestID"
       responses:
         "200":
           description: All required dependencies are ready.
-          headers:
-            X-Request-ID:
-              $ref: "#/components/headers/RequestID"
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ReadinessResponse"
         "503":
           description: One or more required dependencies are unavailable.
-          headers:
-            X-Request-ID:
-              $ref: "#/components/headers/RequestID"
           content:
             application/json:
               schema:
@@ -79,14 +70,9 @@ paths:
       summary: Exchange Telegram init data for a session token
       tags: [Authentication]
       security: [{ telegramInitData: [] }]
-      parameters:
-        - $ref: "#/components/parameters/RequestID"
       responses:
         "201":
           description: Session created.
-          headers:
-            X-Request-ID:
-              $ref: "#/components/headers/RequestID"
           content: { application/json: { schema: { $ref: "#/components/schemas/Session" } } }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/AccessDenied" }
@@ -98,8 +84,6 @@ paths:
       security: [{ sessionToken: [] }]
       x-access: user
       x-session-only: An API token is not a session and cannot be revoked here
-      parameters:
-        - $ref: "#/components/parameters/RequestID"
       responses:
         "204": { description: Session revoked. }
         "401": { $ref: "#/components/responses/Unauthenticated" }
@@ -114,7 +98,6 @@ paths:
         - sessionToken: []
       x-access: user
       parameters:
-        - $ref: "#/components/parameters/RequestID"
         - $ref: "#/components/parameters/Symbol"
       requestBody:
         required: true
@@ -125,9 +108,6 @@ paths:
       responses:
         "200":
           description: Instrument analysis result.
-          headers:
-            X-Request-ID:
-              $ref: "#/components/headers/RequestID"
           content:
             application/json:
               schema:
@@ -151,13 +131,11 @@ paths:
   /api/v1/analysis/market:
     post:
       operationId: analyzeMarket
-      summary: Analyze active instruments in the market
+      summary: Analyze the instruments of a universe
       tags: [Analysis]
       security:
         - sessionToken: []
       x-access: user
-      parameters:
-        - $ref: "#/components/parameters/RequestID"
       requestBody:
         required: true
         content:
@@ -167,9 +145,6 @@ paths:
       responses:
         "200":
           description: Market analysis result.
-          headers:
-            X-Request-ID:
-              $ref: "#/components/headers/RequestID"
           content:
             application/json:
               schema:
@@ -195,7 +170,6 @@ paths:
         - sessionToken: []
       x-access: user
       parameters:
-        - $ref: "#/components/parameters/RequestID"
         - $ref: "#/components/parameters/Symbol"
         - name: interval
           in: query
@@ -222,9 +196,6 @@ paths:
       responses:
         "200":
           description: Candle page.
-          headers:
-            X-Request-ID:
-              $ref: "#/components/headers/RequestID"
           content:
             application/json:
               schema:
@@ -260,14 +231,10 @@ paths:
         - sessionToken: []
       x-access: user
       parameters:
-        - $ref: "#/components/parameters/RequestID"
         - $ref: "#/components/parameters/Symbol"
       responses:
         "200":
           description: Grid limits.
-          headers:
-            X-Request-ID:
-              $ref: "#/components/headers/RequestID"
           content:
             application/json:
               schema:
@@ -372,28 +339,6 @@ paths:
         "404": { $ref: "#/components/responses/FavoriteNotFound" }
         "409": { $ref: "#/components/responses/FavoriteConflict" }
         "500": { $ref: "#/components/responses/InternalError" }
-  /api/v1/favorites/analysis:
-    post:
-      operationId: analyzeFavorites
-      summary: Analyze the current user's active favorite instruments
-      tags: [Favorites]
-      security: [{ sessionToken: [] }]
-      x-access: user
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/MarketAnalysisRequest" }
-      responses:
-        "200":
-          description: Analysis results restricted to favorite instruments.
-          content: { application/json: { schema: { $ref: "#/components/schemas/MarketAnalysisResponse" } } }
-        "400": { $ref: "#/components/responses/BadRequest" }
-        "401": { $ref: "#/components/responses/Unauthenticated" }
-        "403": { $ref: "#/components/responses/AccessDenied" }
-        "422": { $ref: "#/components/responses/UnprocessableAnalysis" }
-        "500": { $ref: "#/components/responses/InternalError" }
-        "503": { $ref: "#/components/responses/AnalysisUnavailable" }
   /api/v1/instruments/{symbol}/alerts:
     get:
       operationId: listPriceAlerts
@@ -723,12 +668,27 @@ paths:
         "201":
           description: Added strategy.
           content: { application/json: { schema: { $ref: "#/components/schemas/Strategy" } } }
-        "400": { $ref: "#/components/responses/BadRequest" }
+        "400": { $ref: "#/components/responses/StrategyInvalid" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/AdministratorRequired" }
         "409": { $ref: "#/components/responses/StrategyConflict" }
         "500": { $ref: "#/components/responses/InternalError" }
   /api/v1/admin/strategies/{strategy_id}:
+    get:
+      operationId: getStrategy
+      summary: Show a strategy
+      tags: [Administration]
+      security: [{ sessionToken: [] }]
+      x-access: administrator
+      parameters: [{ $ref: "#/components/parameters/StrategyID" }]
+      responses:
+        "200":
+          description: The strategy.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Strategy" } } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/AdministratorRequired" }
+        "404": { $ref: "#/components/responses/StrategyNotFound" }
+        "500": { $ref: "#/components/responses/InternalError" }
     put:
       operationId: updateStrategy
       summary: Change a strategy
@@ -744,7 +704,7 @@ paths:
         "200":
           description: Updated strategy.
           content: { application/json: { schema: { $ref: "#/components/schemas/Strategy" } } }
-        "400": { $ref: "#/components/responses/BadRequest" }
+        "400": { $ref: "#/components/responses/StrategyInvalid" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/AdministratorRequired" }
         "404": { $ref: "#/components/responses/StrategyNotFound" }
@@ -765,7 +725,7 @@ paths:
         "200":
           description: Updated strategy.
           content: { application/json: { schema: { $ref: "#/components/schemas/Strategy" } } }
-        "400": { $ref: "#/components/responses/BadRequest" }
+        "400": { $ref: "#/components/responses/StrategyInvalid" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/AdministratorRequired" }
         "404": { $ref: "#/components/responses/StrategyNotFound" }
@@ -783,12 +743,14 @@ paths:
         "403": { $ref: "#/components/responses/AdministratorRequired" }
         "404": { $ref: "#/components/responses/StrategyNotFound" }
         "500": { $ref: "#/components/responses/InternalError" }
-  /api/v1/admin/strategies/{strategy_id}/backtest:
-    get:
+  /api/v1/admin/strategy-backtests:
+    post:
       operationId: backtestStrategy
-      summary: Backtest a saved strategy on one coin
+      summary: Backtest a strategy on one coin
       description: |
-        Evaluates the saved strategy, enabled or not, at the close of every
+        Backtests a saved strategy, enabled or not, or an unsaved one, whose
+        rules are checked as a save checks them. It evaluates the strategy at
+        the close of every
         stored candle of the finest interval its rules read, and replays its
         trades exactly as live signals trade, starting without a trade. Any active coin can be
         backtested; coins read through `of` must be in the administrator's
@@ -811,63 +773,11 @@ paths:
         falls; funding, leverage, and liquidation are not modeled, and it has
         no baselines. A backtest that does not finish
         within its time limit fails with `backtest_too_heavy`. At most two
-        backtests, saved or not, run at once; another fails at once with
-        `backtest_busy`.
+        backtests run at once; another fails at once with `backtest_busy`.
 
         A signal trades nothing: its backtest has no trades and no baselines,
         and `signal` lists its entry signals and how the price moved after
         them.
-      tags: [Administration]
-      security: [{ sessionToken: [] }]
-      x-access: administrator
-      parameters:
-        - $ref: "#/components/parameters/StrategyID"
-        - name: symbol
-          in: query
-          required: true
-          description: Market symbol of the replayed coin.
-          schema: { $ref: "#/components/schemas/SymbolName" }
-        - name: from
-          in: query
-          required: false
-          description: Earliest open time of an evaluated candle; the start of the stored history when absent.
-          schema: { type: string, format: date-time }
-        - name: to
-          in: query
-          required: false
-          description: Latest open time of an evaluated candle, not before `from`; the end of the stored history when absent.
-          schema: { type: string, format: date-time }
-        - name: chart
-          in: query
-          description: Include an immutable chart snapshot of the entire evaluated period.
-          schema: { type: boolean, default: false }
-      responses:
-        "200":
-          description: Simulated trades and their metrics.
-          content: { application/json: { schema: { $ref: "#/components/schemas/StrategyBacktest" } } }
-        "400": { $ref: "#/components/responses/BadRequest" }
-        "401": { $ref: "#/components/responses/Unauthenticated" }
-        "403": { $ref: "#/components/responses/AdministratorRequired" }
-        "404":
-          description: The strategy does not exist, or the symbol is unknown or inactive.
-          headers:
-            X-Request-ID:
-              $ref: "#/components/headers/RequestID"
-          content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
-        "429": { $ref: "#/components/responses/BacktestBusy" }
-        "500": { $ref: "#/components/responses/InternalError" }
-        "503": { $ref: "#/components/responses/BacktestTooHeavy" }
-  /api/v1/admin/strategy-backtests:
-    post:
-      operationId: backtestStrategyDraft
-      summary: Backtest an unsaved strategy on one coin
-      description: |
-        Backtests the strategy or signal of the body without saving it,
-        exactly as `GET /api/v1/admin/strategies/{strategy_id}/backtest`
-        backtests a saved one with the same rules. The rules and trading
-        settings are checked as a save checks them and fail with
-        `invalid_argument`. At most two backtests, saved or not, run at once;
-        another fails at once with `backtest_busy`.
       tags: [Administration]
       security: [{ sessionToken: [] }]
       x-access: administrator
@@ -878,10 +788,12 @@ paths:
         "200":
           description: Simulated trades and their metrics.
           content: { application/json: { schema: { $ref: "#/components/schemas/StrategyBacktest" } } }
-        "400": { $ref: "#/components/responses/BadRequest" }
+        "400": { $ref: "#/components/responses/StrategyInvalid" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/AdministratorRequired" }
-        "404": { $ref: "#/components/responses/SymbolNotFound" }
+        "404":
+          description: The saved strategy does not exist (`strategy_not_found`), or the symbol is unknown or inactive (`symbol_not_found`).
+          content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
         "429": { $ref: "#/components/responses/BacktestBusy" }
         "500": { $ref: "#/components/responses/InternalError" }
         "503": { $ref: "#/components/responses/BacktestTooHeavy" }
@@ -1030,13 +942,6 @@ components:
         type: integer
         format: int64
         minimum: 1
-    RequestID:
-      name: X-Request-ID
-      in: header
-      required: false
-      description: Optional caller-provided correlation ID. Unsafe values are replaced.
-      schema:
-        type: string
     Symbol:
       name: symbol
       in: path
@@ -1075,12 +980,6 @@ components:
         type: integer
         format: int64
         minimum: 1
-  headers:
-    RequestID:
-      description: Correlation ID assigned to the request.
-      required: true
-      schema:
-        type: string
   responses:
     ApiTokenNotFound:
       description: The administrator has no such API token.
@@ -1093,63 +992,42 @@ components:
       content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
     BadRequest:
       description: The request is malformed or contains an unsupported argument.
-      headers:
-        X-Request-ID:
-          $ref: "#/components/headers/RequestID"
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
     Unauthenticated:
       description: The session or Telegram init data is missing, invalid, or expired.
-      headers:
-        X-Request-ID:
-          $ref: "#/components/headers/RequestID"
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
     AccessDenied:
       description: The authenticated Telegram user has no access.
-      headers:
-        X-Request-ID:
-          $ref: "#/components/headers/RequestID"
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
     SymbolNotFound:
       description: The symbol is unknown or inactive.
-      headers:
-        X-Request-ID:
-          $ref: "#/components/headers/RequestID"
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
     InsufficientData:
       description: The requested analysis requires more candle history.
-      headers:
-        X-Request-ID:
-          $ref: "#/components/headers/RequestID"
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
     UnprocessableAnalysis:
       description: An instrument could not be resolved for analysis.
-      headers:
-        X-Request-ID:
-          $ref: "#/components/headers/RequestID"
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
     InternalError:
       description: An unexpected server error occurred.
-      headers:
-        X-Request-ID:
-          $ref: "#/components/headers/RequestID"
       content:
         application/json:
           schema:
@@ -1183,35 +1061,26 @@ components:
     StrategyConflict:
       description: Another strategy has the name.
       content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
+    StrategyInvalid:
+      description: |
+        The request is malformed, or the strategy is invalid (`invalid_argument`):
+        then `error.details.problems` lists every problem of its rules, or the
+        one of its other settings, and `error.message` joins them.
+      content: { application/json: { schema: { $ref: "#/components/schemas/StrategyInvalidResponse" } } }
     BacktestTooHeavy:
       description: The backtest did not finish within its time limit (`backtest_too_heavy`).
-      headers:
-        X-Request-ID:
-          $ref: "#/components/headers/RequestID"
       content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
     BacktestBusy:
       description: Two backtests already run (`backtest_busy`); retry once one ends.
-      headers:
-        X-Request-ID:
-          $ref: "#/components/headers/RequestID"
       content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
     SessionRequired:
       description: The user is not the scanner administrator (`administrator_required`), or authenticated with an API token instead of a Mini App session (`session_required`).
-      headers:
-        X-Request-ID:
-          $ref: "#/components/headers/RequestID"
       content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
     HistoryLoadRunning:
       description: Another history load is running (`history_load_running`).
-      headers:
-        X-Request-ID:
-          $ref: "#/components/headers/RequestID"
       content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
     AnalysisUnavailable:
       description: Required market data or market-capitalization data is unavailable.
-      headers:
-        X-Request-ID:
-          $ref: "#/components/headers/RequestID"
       content:
         application/json:
           schema:
@@ -1394,7 +1263,14 @@ components:
       description: >-
         Instruments to select. `spot` (the default) selects every active Spot
         USDT instrument; `coinm_perpetual` selects only those whose coin has a
-        trading Binance COIN-M perpetual contract.
+        trading Binance COIN-M perpetual contract; `favorites` selects the
+        current user's favorites: an analysis has a row for every favorite,
+        active or not, in the favorites order, with the favorites table, and
+        an instrument list only the active ones.
+      type: string
+      enum: [spot, coinm_perpetual, favorites]
+    Market:
+      description: A Binance market the coin of a table row trades on.
       type: string
       enum: [spot, coinm_perpetual]
     CriterionRequest:
@@ -1573,7 +1449,7 @@ components:
         markets:
           type: array
           items:
-            $ref: "#/components/schemas/MarketUniverse"
+            $ref: "#/components/schemas/Market"
         cells:
           description: Cells keyed by column id. Columns of kind `text` and `favorite` have no cell.
           type: object
@@ -2173,6 +2049,38 @@ components:
           $ref: "#/components/schemas/APIError"
         request_id:
           type: string
+    StrategyInvalidResponse:
+      type: object
+      additionalProperties: false
+      required: [error, request_id]
+      description: An `ErrorResponse` whose details list the problems of an invalid strategy.
+      properties:
+        error:
+          $ref: "#/components/schemas/StrategyInvalidError"
+        request_id:
+          type: string
+    StrategyInvalidError:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          enum: [invalid_argument]
+        message:
+          type: string
+        details:
+          $ref: "#/components/schemas/StrategyProblems"
+    StrategyProblems:
+      type: object
+      additionalProperties: false
+      required: [problems]
+      description: Present when the strategy itself is invalid; absent when the request does not match the contract.
+      properties:
+        problems:
+          type: array
+          minItems: 1
+          items: { type: string }
     CurrentUser:
       type: object
       additionalProperties: false
@@ -2221,7 +2129,7 @@ components:
         indicator_types:
           type: array
           description: Every indicator type calls may name, configured or not, ordered by type.
-          items: { $ref: "#/components/schemas/StrategyIndicatorType" }
+          items: { $ref: "#/components/schemas/IndicatorType" }
         candle_fields:
           type: array
           description: Candle fields, called with the period only, such as `close("1h")`.
@@ -2257,63 +2165,6 @@ components:
           type: array
           description: The outputs; calls of an indicator with several add the output to the type, such as `bbands_upperband`, calls of one with a single output are named by the type alone.
           items: { type: string }
-    StrategyIndicatorType:
-      type: object
-      additionalProperties: false
-      required: [type, title, outputs, parameters]
-      description: An indicator type as calls name it, such as `bbands`, with the parameters that follow the period.
-      properties:
-        type: { type: string }
-        title: { type: string }
-        outputs:
-          type: array
-          minItems: 1
-          description: The outputs; calls of an indicator with several add the output to the type, such as `bbands_upperband`, calls of one with a single output are named by the type alone.
-          items: { $ref: "#/components/schemas/StrategyIndicatorOutput" }
-        parameters:
-          type: array
-          description: The parameters in the order calls write them after the period.
-          items: { $ref: "#/components/schemas/StrategyIndicatorParameter" }
-    StrategyIndicatorOutput:
-      type: object
-      additionalProperties: false
-      required: [name, sparse]
-      properties:
-        name: { type: string }
-        sparse:
-          type: boolean
-          description: The output is empty on some candles, such as `pivot_high`; it cannot be the source of another indicator.
-    StrategyIndicatorParameter:
-      type: object
-      additionalProperties: false
-      required: [key, title, kind, default]
-      properties:
-        key: { type: string }
-        title: { type: string }
-        kind:
-          type: string
-          enum: [integer, real, choice, source]
-          description: |
-            `choice` is an integer limited to `choices`; `source` is the
-            series the indicator reads: one of `choices`, written by its
-            name, or a call of another indicator on the same period;
-            `minimum` and `maximum` bound the other kinds.
-        default: { type: number, format: double }
-        minimum: { type: number, format: double }
-        maximum: { type: number, format: double }
-        choices:
-          type: array
-          items: { $ref: "#/components/schemas/StrategyIndicatorChoice" }
-    StrategyIndicatorChoice:
-      type: object
-      additionalProperties: false
-      required: [value, title]
-      properties:
-        value: { type: integer }
-        title: { type: string }
-        name:
-          type: string
-          description: The name calls write for the choice, such as `volume`; absent for a choice calls write as a number, or, of a source, only by leaving the source out.
     StrategyPositionVariable:
       type: object
       additionalProperties: false
@@ -2345,30 +2196,12 @@ components:
     Strategy:
       type: object
       additionalProperties: false
-      required: [id, name, signal, direction, expression, exit_expression, take_profit_expression, stop_loss_expression, coins, coin_source, min_market_cap_usd, max_market_cap_usd, target_ratio, window, message, enabled, valid]
+      required: [id, name, rules, coins, message, enabled, valid]
       properties:
         id: { $ref: "#/components/schemas/StrategyID" }
         name: { type: string }
-        signal: { $ref: "#/components/schemas/StrategySignal" }
-        direction: { $ref: "#/components/schemas/Direction" }
-        expression:
-          type: string
-          description: Entry rule, a CEL expression such as `rsi("1d") > 50 && CrossesAbove(ema("1h", 20), ema("1h", 50))`.
-        exit_expression: { $ref: "#/components/schemas/StrategyExitExpression" }
-        take_profit_expression: { $ref: "#/components/schemas/StrategyTakeProfitExpression" }
-        stop_loss_expression: { $ref: "#/components/schemas/StrategyStopLossExpression" }
+        rules: { $ref: "#/components/schemas/StrategyRules" }
         coins: { $ref: "#/components/schemas/StrategyCoins" }
-        coin_source: { $ref: "#/components/schemas/StrategyCoinSource" }
-        min_market_cap_usd: { $ref: "#/components/schemas/StrategyMarketCapBound" }
-        max_market_cap_usd: { $ref: "#/components/schemas/StrategyMarketCapBound" }
-        target_ratio:
-          oneOf:
-            - $ref: "#/components/schemas/SignalTargetRatio"
-            - type: "null"
-        window:
-          oneOf:
-            - $ref: "#/components/schemas/SignalWindow"
-            - type: "null"
         message: { $ref: "#/components/schemas/StrategyMessage" }
         enabled: { type: boolean }
         valid:
@@ -2822,94 +2655,33 @@ components:
     StrategyUpdate:
       type: object
       additionalProperties: false
-      required: [name, signal, direction, expression, exit_expression, take_profit_expression, stop_loss_expression, coins, coin_source, min_market_cap_usd, max_market_cap_usd, target_ratio, window, message]
+      required: [name, rules, coins, message]
       properties:
-        name: { type: string, minLength: 1, maxLength: 64 }
-        signal: { $ref: "#/components/schemas/StrategySignal" }
-        direction: { $ref: "#/components/schemas/Direction" }
-        message: { $ref: "#/components/schemas/StrategyMessage" }
-        exit_expression: { $ref: "#/components/schemas/StrategyExitExpression" }
-        take_profit_expression: { $ref: "#/components/schemas/StrategyTakeProfitExpression" }
-        stop_loss_expression: { $ref: "#/components/schemas/StrategyStopLossExpression" }
+        name: { $ref: "#/components/schemas/StrategyName" }
+        rules: { $ref: "#/components/schemas/StrategyRules" }
         coins: { $ref: "#/components/schemas/StrategyCoins" }
-        coin_source: { $ref: "#/components/schemas/StrategyCoinSource" }
-        min_market_cap_usd: { $ref: "#/components/schemas/StrategyMarketCapBound" }
-        max_market_cap_usd: { $ref: "#/components/schemas/StrategyMarketCapBound" }
-        target_ratio:
-          oneOf:
-            - $ref: "#/components/schemas/SignalTargetRatio"
-            - type: "null"
-        window:
-          oneOf:
-            - $ref: "#/components/schemas/SignalWindow"
-            - type: "null"
-        expression:
-          type: string
-          minLength: 1
-          maxLength: 2000
-          description: |
-            CEL over indicator and candle field calls, such as `rsi("1h")`,
-            `bbands_upperband("1d", 20, 2.5)`, or `close("1h")`: comparisons
-            (`>`, `>=`, `<`, `<=`) of arithmetic (`+`, `-`, `*`, `/`,
-            parentheses) over calls and numbers, combined with `&&`, `||`,
-            and `!`. `Prev(x)` and `Prev(x, n)` read `x` one or `n` closed
-            candles earlier; `Percentile(x, n, p)` is the nearest-rank
-            `p`-th percentile of `x` over the `n` closed candles before the
-            latest one; `CrossesAbove(a, b)` and `CrossesBelow(a, b)` compare
-            with the previous candle. `Of("BTCUSDT", x)` reads `x` of another
-            coin, which must be active.
+        message: { $ref: "#/components/schemas/StrategyMessage" }
     StrategyInput:
       type: object
       additionalProperties: false
-      required: [name, signal, direction, expression, exit_expression, take_profit_expression, stop_loss_expression, coins, coin_source, min_market_cap_usd, max_market_cap_usd, target_ratio, window, message, enabled]
+      required: [name, rules, coins, message, enabled]
       properties:
-        name: { type: string, minLength: 1, maxLength: 64 }
-        signal: { $ref: "#/components/schemas/StrategySignal" }
-        direction: { $ref: "#/components/schemas/Direction" }
-        expression: { type: string, minLength: 1, maxLength: 2000 }
-        exit_expression: { $ref: "#/components/schemas/StrategyExitExpression" }
-        take_profit_expression: { $ref: "#/components/schemas/StrategyTakeProfitExpression" }
-        stop_loss_expression: { $ref: "#/components/schemas/StrategyStopLossExpression" }
+        name: { $ref: "#/components/schemas/StrategyName" }
+        rules: { $ref: "#/components/schemas/StrategyRules" }
         coins: { $ref: "#/components/schemas/StrategyCoins" }
-        coin_source: { $ref: "#/components/schemas/StrategyCoinSource" }
-        min_market_cap_usd: { $ref: "#/components/schemas/StrategyMarketCapBound" }
-        max_market_cap_usd: { $ref: "#/components/schemas/StrategyMarketCapBound" }
-        target_ratio:
-          oneOf:
-            - $ref: "#/components/schemas/SignalTargetRatio"
-            - type: "null"
-        window:
-          oneOf:
-            - $ref: "#/components/schemas/SignalWindow"
-            - type: "null"
         message: { $ref: "#/components/schemas/StrategyMessage" }
         enabled: { type: boolean }
+    StrategyName:
+      type: string
+      minLength: 1
+      maxLength: 64
     StrategyBacktestInput:
       type: object
       additionalProperties: false
-      description: |
-        The rules and trading settings of an unsaved strategy or signal, as
-        in `StrategyInput`, and the backtested coin and period.
-      required: [signal, direction, expression, exit_expression, take_profit_expression, stop_loss_expression, target_ratio, window, symbol]
+      description: The backtested strategy, the backtested coin, and the period.
+      required: [strategy, symbol]
       properties:
-        chart:
-          type: boolean
-          default: false
-          description: Include an immutable chart snapshot of the entire evaluated period.
-        signal: { $ref: "#/components/schemas/StrategySignal" }
-        direction: { $ref: "#/components/schemas/Direction" }
-        expression: { type: string, minLength: 1, maxLength: 2000 }
-        exit_expression: { $ref: "#/components/schemas/StrategyExitExpression" }
-        take_profit_expression: { $ref: "#/components/schemas/StrategyTakeProfitExpression" }
-        stop_loss_expression: { $ref: "#/components/schemas/StrategyStopLossExpression" }
-        target_ratio:
-          oneOf:
-            - $ref: "#/components/schemas/SignalTargetRatio"
-            - type: "null"
-        window:
-          oneOf:
-            - $ref: "#/components/schemas/SignalWindow"
-            - type: "null"
+        strategy: { $ref: "#/components/schemas/BacktestedStrategy" }
         symbol: { $ref: "#/components/schemas/SymbolName" }
         from:
           type: string
@@ -2919,13 +2691,99 @@ components:
           type: string
           format: date-time
           description: Latest open time of an evaluated candle, not before `from`; the end of the stored history when absent.
-    StrategySignal:
-      type: boolean
+        chart:
+          type: boolean
+          default: false
+          description: Include an immutable chart snapshot of the entire evaluated period.
+    BacktestedStrategy:
+      description: A saved strategy, by its id, or the rules of an unsaved one.
+      oneOf:
+        - $ref: "#/components/schemas/SavedBacktestedStrategy"
+        - $ref: "#/components/schemas/DraftBacktestedStrategy"
+      discriminator:
+        propertyName: kind
+        mapping:
+          saved: "#/components/schemas/SavedBacktestedStrategy"
+          draft: "#/components/schemas/DraftBacktestedStrategy"
+    SavedBacktestedStrategy:
+      type: object
+      additionalProperties: false
+      required: [kind, id]
+      description: A saved strategy or signal, enabled or not.
+      properties:
+        kind: { type: string, enum: [saved] }
+        id: { $ref: "#/components/schemas/StrategyID" }
+    DraftBacktestedStrategy:
+      type: object
+      additionalProperties: false
+      required: [kind, rules]
+      description: An unsaved strategy or signal, whose rules are checked as a save checks them.
+      properties:
+        kind: { type: string, enum: [draft] }
+        rules: { $ref: "#/components/schemas/StrategyRules" }
+    StrategyRules:
+      type: object
+      additionalProperties: false
       description: |
-        Whether the strategy is a signal, which buys nothing and only
-        announces its entry signals, so its exit rule, take profit, and stop
-        loss are empty. Fixed at creation:
-        an update that changes it is refused.
+        How a strategy trades or what a signal announces, all that a backtest
+        reads. A signal buys nothing and only announces its entry signals, so
+        its exit rule, take profit, and stop loss are empty. `signal` and
+        `direction` are fixed at creation: an update that changes them is
+        refused.
+      required: [signal, direction, expression, exit_expression, take_profit_expression, stop_loss_expression, target_ratio, window]
+      properties:
+        signal:
+          type: boolean
+          description: Whether the strategy is a signal.
+        direction: { $ref: "#/components/schemas/Direction" }
+        expression:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          description: |
+            Entry rule, CEL over indicator and candle field calls, such as
+            `rsi("1d") > 50 && CrossesAbove(ema("1h", 20), ema("1h", 50))`:
+            comparisons (`>`, `>=`, `<`, `<=`) of arithmetic (`+`, `-`, `*`,
+            `/`, parentheses) over calls and numbers, combined with `&&`,
+            `||`, and `!`. `Prev(x)` and `Prev(x, n)` read `x` one or `n`
+            closed candles earlier; `Percentile(x, n, p)` is the nearest-rank
+            `p`-th percentile of `x` over the `n` closed candles before the
+            latest one; `CrossesAbove(a, b)` and `CrossesBelow(a, b)` compare
+            with the previous candle. `Of("BTCUSDT", x)` reads `x` of another
+            coin, which must be active.
+        exit_expression:
+          type: string
+          maxLength: 2000
+          description: |
+            Exit rule, a CEL expression like the entry rule that may also read the
+            position variables, such as `pnl >= 5 || bars_held >= 24`; empty
+            without an exit rule. A strategy without an exit rule, take profit,
+            or stop loss never sells and buys at every entry signal.
+        take_profit_expression:
+          type: string
+          maxLength: 2000
+          description: |
+            Take profit price, a CEL price expression evaluated at the close of
+            the entry signal and fixed for the trade, such as `close("1h") * 1.05` or
+            `bbands_upperband("1h", 20)`: arithmetic and `Abs`, `Mod`, `Min`,
+            `Max`, `Prev`, `Percentile`, and `Of` over calls and numbers,
+            reading the evaluated coin. A signal whose take profit is not above
+            its close buys nothing. Empty without a take profit.
+        stop_loss_expression:
+          type: string
+          maxLength: 2000
+          description: |
+            Stop loss price, a CEL price expression like the take profit, such as
+            `close("1h") - 2 * atr("1h")`. A signal whose stop loss is not between 0
+            and its close buys nothing. Empty without a stop loss.
+        target_ratio:
+          oneOf:
+            - $ref: "#/components/schemas/SignalTargetRatio"
+            - type: "null"
+        window:
+          oneOf:
+            - $ref: "#/components/schemas/SignalWindow"
+            - type: "null"
     Direction:
       type: string
       enum: [simple, long, short, sideways]
@@ -2933,8 +2791,7 @@ components:
         How a strategy trades, long or short, or the price move a signal
         expects after its entry signals: none in particular (simple), up,
         down, or sideways. A simple signal has no target ratio or window. A short
-        strategy always has a take profit and a stop loss. Fixed at creation:
-        an update that changes it is refused.
+        strategy always has a take profit and a stop loss.
     SignalTargetRatio:
       type: integer
       enum: [2, 3, 4, 5]
@@ -2951,21 +2808,30 @@ components:
         backtest judges it. Required for a signal, null for a simple signal
         and a trading strategy.
     StrategyCoins:
-      type: array
-      maxItems: 2000
-      items: { $ref: "#/components/schemas/SymbolName" }
-      description: |
-        The coins the enabled strategy or signal evaluates, among all coins,
-        ascending, when `coin_source` is `selected`, which needs at least
-        one; none otherwise. Every coin must be active: a delisted coin,
-        chosen or read through `of`, disables the strategy until it is
-        replaced or removed.
+      type: object
+      additionalProperties: false
+      description: The coins a strategy or signal evaluates and, a signal's only, the market caps it announces.
+      required: [source, symbols, min_market_cap_usd, max_market_cap_usd]
+      properties:
+        source: { $ref: "#/components/schemas/StrategyCoinSource" }
+        symbols:
+          type: array
+          maxItems: 2000
+          items: { $ref: "#/components/schemas/SymbolName" }
+          description: |
+            The coins the enabled strategy or signal evaluates, among all coins,
+            ascending, when `source` is `selected`, which needs at least
+            one; none otherwise. Every coin must be active: a delisted coin,
+            chosen or read through `of`, disables the strategy until it is
+            replaced or removed.
+        min_market_cap_usd: { $ref: "#/components/schemas/StrategyMarketCapBound" }
+        max_market_cap_usd: { $ref: "#/components/schemas/StrategyMarketCapBound" }
     StrategyCoinSource:
       type: string
       enum: [selected, favorites, all]
       x-enum-varnames: [CoinSourceSelected, CoinSourceFavorites, CoinSourceAll]
       description: |
-        Which coins the strategy evaluates: `selected`, the coins in `coins`;
+        Which coins the strategy evaluates: `selected`, the coins in `symbols`;
         or, a signal's only, `favorites`, the administrator's active favorites
         whenever they change, or `all`, every active coin.
     StrategyMarketCapBound:
@@ -2978,31 +2844,6 @@ components:
         open, and a trading strategy has null for both. With either bound,
         coins of an unknown market cap signal nothing. Backtests ignore it.
         The minimum must not exceed the maximum.
-    StrategyExitExpression:
-      type: string
-      maxLength: 2000
-      description: |
-        Exit rule, a CEL expression like the entry rule that may also read the
-        position variables, such as `pnl >= 5 || bars_held >= 24`; empty
-        without an exit rule. A strategy without an exit rule, take profit,
-        or stop loss never sells and buys at every entry signal.
-    StrategyTakeProfitExpression:
-      type: string
-      maxLength: 2000
-      description: |
-        Take profit price, a CEL price expression evaluated at the close of
-        the entry signal and fixed for the trade, such as `close("1h") * 1.05` or
-        `bbands_upperband("1h", 20)`: arithmetic and `Abs`, `Mod`, `Min`,
-        `Max`, `Prev`, `Percentile`, and `Of` over calls and numbers,
-        reading the evaluated coin. A signal whose take profit is not above
-        its close buys nothing. Empty without a take profit.
-    StrategyStopLossExpression:
-      type: string
-      maxLength: 2000
-      description: |
-        Stop loss price, a CEL price expression like the take profit, such as
-        `close("1h") - 2 * atr("1h")`. A signal whose stop loss is not between 0
-        and its close buys nothing. Empty without a stop loss.
     StrategyMessage:
       type: string
       maxLength: 1000
@@ -3054,6 +2895,7 @@ components:
       type: object
       additionalProperties: false
       required: [type, title, group, overlay, parameters, outputs]
+      description: An indicator the scanner can calculate, as calls name it, such as `bbands`, with the parameters that follow the period.
       properties:
         type: { type: string }
         title: { type: string }
@@ -3063,11 +2905,22 @@ components:
           description: Charts draw it over the candles; otherwise in a pane below.
         parameters:
           type: array
+          description: The parameters in the order calls write them after the period.
           items: { $ref: "#/components/schemas/IndicatorParameter" }
         outputs:
           type: array
           minItems: 1
-          items: { type: string }
+          description: The outputs; calls of an indicator with several add the output to the type, such as `bbands_upperband`, calls of one with a single output are named by the type alone.
+          items: { $ref: "#/components/schemas/IndicatorOutput" }
+    IndicatorOutput:
+      type: object
+      additionalProperties: false
+      required: [name, sparse]
+      properties:
+        name: { type: string }
+        sparse:
+          type: boolean
+          description: The output is empty on some candles, such as `pivot_high`; it cannot be the source of another indicator.
     IndicatorParameter:
       type: object
       additionalProperties: false
@@ -3078,8 +2931,12 @@ components:
         description: { type: string }
         kind:
           type: string
-          enum: [integer, real, choice]
-          description: "`choice` is an integer limited to `choices`; `minimum` and `maximum` bound the other kinds."
+          enum: [integer, real, choice, source]
+          description: |
+            `choice` is an integer limited to `choices`; `source` is the
+            series the indicator reads: one of `choices`, which are candle
+            fields, or, in strategy calls, a call of another indicator on the
+            same period; `minimum` and `maximum` bound the other kinds.
         default: { type: number, format: double }
         minimum: { type: number, format: double }
         maximum: { type: number, format: double }
@@ -3093,6 +2950,9 @@ components:
       properties:
         value: { type: integer }
         title: { type: string }
+        name:
+          type: string
+          description: The name calls write for the choice, such as `volume`; absent for a choice calls write as a number, or, of a source, only by leaving the source out.
     ScannerIndicatorScale:
       type: object
       additionalProperties: false

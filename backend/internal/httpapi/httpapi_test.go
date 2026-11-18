@@ -175,7 +175,7 @@ func TestEveryResponseGetsAGeneratedRequestIDWhenTheIncomingValueIsUnsafe(t *tes
 
 func TestBusinessRoutesRejectUnsupportedMethodsBeforeAuthentication(t *testing.T) {
 	authenticator := &countingAuthenticator{}
-	handler := httpapi.NewWithAuthentication(logging.New(io.Discard, "error", logging.Options{}), httpapi.Dependencies{Readiness: readinessStub{}, Analysis: unavailableAnalysis{}}, httpapi.Options{}, authenticator.Authenticate)
+	handler := newTestHandlerWithAuthentication(logging.New(io.Discard, "error", logging.Options{}), httpapi.Dependencies{Readiness: readinessStub{}, Analysis: unavailableAnalysis{}}, httpapi.Options{}, authenticator.Authenticate)
 	for _, test := range []struct {
 		name   string
 		method string
@@ -208,7 +208,7 @@ func TestBusinessRoutesRejectUnsupportedMethodsBeforeAuthentication(t *testing.T
 
 func TestUnknownAPIRouteReturnsNotFoundBeforeAuthentication(t *testing.T) {
 	authenticator := &countingAuthenticator{}
-	handler := httpapi.NewWithAuthentication(logging.New(io.Discard, "error", logging.Options{}), httpapi.Dependencies{Readiness: readinessStub{}, Analysis: unavailableAnalysis{}}, httpapi.Options{}, authenticator.Authenticate)
+	handler := newTestHandlerWithAuthentication(logging.New(io.Discard, "error", logging.Options{}), httpapi.Dependencies{Readiness: readinessStub{}, Analysis: unavailableAnalysis{}}, httpapi.Options{}, authenticator.Authenticate)
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/unknown", nil))
 	if response.Code != http.StatusNotFound {
@@ -236,7 +236,7 @@ func TestRouterDoesNotExposeTelegramBotEndpoints(t *testing.T) {
 }
 
 func newTestHTTPHandler(logger *slog.Logger, readiness httpapi.Readiness) http.Handler {
-	return httpapi.NewWithAuthentication(logger, httpapi.Dependencies{Readiness: readiness, Analysis: unavailableAnalysis{}}, httpapi.Options{}, passThrough)
+	return newTestHandlerWithAuthentication(logger, httpapi.Dependencies{Readiness: readiness, Analysis: unavailableAnalysis{}}, httpapi.Options{}, passThrough)
 }
 
 type unavailableAnalysis struct{}

@@ -128,26 +128,23 @@ func authorizationCredential(header, scheme string) (string, bool) {
 }
 
 func (api *api) CreateSession(ctx context.Context, _ CreateSessionRequestObject) (CreateSessionResponseObject, error) {
-	issued, err := api.sessions.Exchange(ctx, credentialFromContext(ctx))
+	issued, err := api.Sessions.Exchange(ctx, credentialFromContext(ctx))
 	switch {
 	case err == nil:
-		return CreateSession201JSONResponse{
-			Body:    Session{Token: issued.Token, ExpiresAt: issued.ExpiresAt},
-			Headers: CreateSession201ResponseHeaders{XRequestID: RequestIdentifier(ctx)},
-		}, nil
+		return CreateSession201JSONResponse{Token: issued.Token, ExpiresAt: issued.ExpiresAt}, nil
 	case errors.Is(err, auth.ErrUnauthenticated):
 		body := newAPIError(ctx, http.StatusUnauthorized, "unauthenticated", auth.ErrUnauthenticated.Error(), nil).body
-		return CreateSession401JSONResponse{UnauthenticatedJSONResponse{Body: body, Headers: UnauthenticatedResponseHeaders{XRequestID: body.RequestId}}}, nil
+		return CreateSession401JSONResponse{UnauthenticatedJSONResponse(body)}, nil
 	case errors.Is(err, auth.ErrAccessDenied):
 		body := newAPIError(ctx, http.StatusForbidden, "access_denied", auth.ErrAccessDenied.Error(), nil).body
-		return CreateSession403JSONResponse{AccessDeniedJSONResponse{Body: body, Headers: AccessDeniedResponseHeaders{XRequestID: body.RequestId}}}, nil
+		return CreateSession403JSONResponse{AccessDeniedJSONResponse(body)}, nil
 	default:
 		return CreateSession500JSONResponse{api.internalError(ctx, "create_session", err)}, nil
 	}
 }
 
 func (api *api) DeleteSession(ctx context.Context, _ DeleteSessionRequestObject) (DeleteSessionResponseObject, error) {
-	if err := api.sessions.Revoke(ctx, credentialFromContext(ctx)); err != nil {
+	if err := api.Sessions.Revoke(ctx, credentialFromContext(ctx)); err != nil {
 		return DeleteSession500JSONResponse{api.internalError(ctx, "delete_session", err)}, nil
 	}
 	return DeleteSession204Response{}, nil

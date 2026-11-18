@@ -2,7 +2,6 @@ import { notifications } from "@mantine/notifications";
 import { useQueryClient } from "@tanstack/react-query";
 
 import {
-	getAnalyzeFavoritesQueryKey,
 	getAnalyzeMarketQueryKey,
 	getListChartIndicatorsQueryKey,
 	getListScannerIndicatorsQueryKey,
@@ -60,12 +59,9 @@ export function useSaveScannerIndicator(indicator: ScannerIndicator) {
 					shownIntervals(indicator.periods, "show_in_table").join() !==
 					shownIntervals(response.data.periods, "show_in_table").join()
 				) {
+					// Favorites analyses are market analyses of their universe.
 					void queryClient.invalidateQueries({
 						queryKey: getAnalyzeMarketQueryKey().slice(0, 2),
-						refetchType: "none",
-					});
-					void queryClient.invalidateQueries({
-						queryKey: getAnalyzeFavoritesQueryKey().slice(0, 2),
 						refetchType: "none",
 					});
 				}

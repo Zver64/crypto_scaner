@@ -4,10 +4,10 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"slices"
 	"time"
 
 	"crypto-scanner/internal/chart"
-	"crypto-scanner/internal/indicator"
 	"crypto-scanner/internal/market"
 	"crypto-scanner/internal/strategy"
 
@@ -17,6 +17,7 @@ import (
 // Strategies manages the administrator's strategies.
 type Strategies interface {
 	List() []strategy.Entry
+	Get(uuid.UUID) (strategy.Entry, error)
 	// Catalog lists what expressions read.
 	Catalog() (strategy.Catalog, error)
 	Validate(ctx context.Context, expression string, kind strategy.RuleKind) (strategy.Validation, error)
@@ -29,17 +30,17 @@ type Strategies interface {
 }
 
 func (api *api) GetStrategyCatalog(ctx context.Context, _ GetStrategyCatalogRequestObject) (GetStrategyCatalogResponseObject, error) {
-	catalog, err := api.strategies.Catalog()
+	catalog, err := api.Strategies.Catalog()
 	if err != nil {
 		return GetStrategyCatalog500JSONResponse{api.internalError(ctx, "get_strategy_catalog", err)}, nil
 	}
 	response := StrategyCatalog{
-		Indicators: indicatorCallDTOs(catalog.Indicators), IndicatorTypes: make([]StrategyIndicatorType, len(catalog.IndicatorTypes)),
+		Indicators: indicatorCallDTOs(catalog.Indicators), IndicatorTypes: make([]IndicatorType, len(catalog.IndicatorTypes)),
 		CandleFields: catalog.CandleFields,
 		Intervals:    make([]CandleInterval, len(catalog.Intervals)), PositionVariables: make([]StrategyPositionVariable, len(catalog.Positions)),
 	}
 	for i, descriptor := range catalog.IndicatorTypes {
-		response.IndicatorTypes[i] = strategyIndicatorTypeDTO(descriptor)
+		response.IndicatorTypes[i] = indicatorTypeDTO(descriptor)
 	}
 	for i, interval := range catalog.Intervals {
 		response.Intervals[i] = CandleInterval(interval)
@@ -48,37 +49,6 @@ func (api *api) GetStrategyCatalog(ctx context.Context, _ GetStrategyCatalogRequ
 		response.PositionVariables[i] = StrategyPositionVariable{Name: variable.Name, Count: variable.Count}
 	}
 	return GetStrategyCatalog200JSONResponse(response), nil
-}
-
-// strategyIndicatorTypeDTO describes an indicator type as calls write it:
-// unlike indicatorTypeDTO, a source stays a source, whose named choices
-// calls write by name.
-func strategyIndicatorTypeDTO(descriptor indicator.Descriptor) StrategyIndicatorType {
-	item := StrategyIndicatorType{
-		Type: string(descriptor.Type), Title: descriptor.Title,
-		Outputs:    make([]StrategyIndicatorOutput, len(descriptor.Outputs)),
-		Parameters: make([]StrategyIndicatorParameter, len(descriptor.Parameters)),
-	}
-	for i, output := range descriptor.Outputs {
-		item.Outputs[i] = StrategyIndicatorOutput{Name: output.Name, Sparse: output.Sparse}
-	}
-	for i, parameter := range descriptor.Parameters {
-		dto := StrategyIndicatorParameter{Key: parameter.Key, Title: parameter.Title, Kind: StrategyIndicatorParameterKind(parameter.Kind), Default: parameter.Default}
-		if parameter.Kind == indicator.ParameterChoice || parameter.Kind == indicator.ParameterSource {
-			choices := make([]StrategyIndicatorChoice, len(parameter.Choices))
-			for j, choice := range parameter.Choices {
-				choices[j] = StrategyIndicatorChoice{Value: choice.Value, Title: choice.Title}
-				if choice.Name != "" {
-					choices[j].Name = &choice.Name
-				}
-			}
-			dto.Choices = &choices
-		} else {
-			dto.Minimum, dto.Maximum = &parameter.Minimum, &parameter.Maximum
-		}
-		item.Parameters[i] = dto
-	}
-	return item
 }
 
 func indicatorCallDTOs(calls []strategy.IndicatorCall) []StrategyIndicatorCall {
@@ -102,7 +72,7 @@ func (api *api) ValidateStrategy(ctx context.Context, request ValidateStrategyRe
 			kind = strategy.PriceRule
 		}
 	}
-	validation, err := api.strategies.Validate(ctx, request.Body.Expression, kind)
+	validation, err := api.Strategies.Validate(ctx, request.Body.Expression, kind)
 	if err != nil {
 		return ValidateStrategy500JSONResponse{api.internalError(ctx, "validate_strategy", err)}, nil
 	}
@@ -110,29 +80,35 @@ func (api *api) ValidateStrategy(ctx context.Context, request ValidateStrategyRe
 }
 
 func (api *api) ListStrategies(context.Context, ListStrategiesRequestObject) (ListStrategiesResponseObject, error) {
-	entries := api.strategies.List()
+	entries := api.Strategies.List()
 	items := make([]Strategy, len(entries))
 	for i, entry := range entries {
-		items[i] = api.strategyDTO(entry)
+		items[i] = strategyDTO(entry)
 	}
 	return ListStrategies200JSONResponse{Items: items}, nil
 }
 
-func (api *api) CreateStrategy(ctx context.Context, request CreateStrategyRequestObject) (CreateStrategyResponseObject, error) {
-	body := request.Body
-	entry, err := api.strategies.Create(ctx, strategy.Strategy{
-		Name: body.Name, Signal: bool(body.Signal), Direction: strategy.Direction(body.Direction), Expression: body.Expression, ExitExpression: body.ExitExpression,
-		TakeProfitExpression: body.TakeProfitExpression, StopLossExpression: body.StopLossExpression,
-		Coins: body.Coins, CoinSource: strategy.CoinSource(body.CoinSource),
-		MarketCap:   strategy.MarketCapRange{MinUSD: body.MinMarketCapUsd, MaxUSD: body.MaxMarketCapUsd},
-		TargetRatio: fromNullable(body.TargetRatio), Window: fromNullable(body.Window),
-		Message: body.Message, Enabled: body.Enabled,
-	})
+func (api *api) GetStrategy(ctx context.Context, request GetStrategyRequestObject) (GetStrategyResponseObject, error) {
+	entry, err := api.Strategies.Get(request.StrategyId)
 	switch {
 	case err == nil:
-		return CreateStrategy201JSONResponse(api.strategyDTO(entry)), nil
+		return GetStrategy200JSONResponse(strategyDTO(entry)), nil
+	case errors.Is(err, strategy.ErrNotFound):
+		return GetStrategy404JSONResponse{strategyNotFound(ctx)}, nil
+	default:
+		return GetStrategy500JSONResponse{api.internalError(ctx, "get_strategy", err)}, nil
+	}
+}
+
+func (api *api) CreateStrategy(ctx context.Context, request CreateStrategyRequestObject) (CreateStrategyResponseObject, error) {
+	item := strategyFromDTO(request.Body.Rules, request.Body.Coins)
+	item.Name, item.Message, item.Enabled = request.Body.Name, request.Body.Message, request.Body.Enabled
+	entry, err := api.Strategies.Create(ctx, item)
+	switch {
+	case err == nil:
+		return CreateStrategy201JSONResponse(strategyDTO(entry)), nil
 	case errors.Is(err, strategy.ErrInvalidArgument):
-		return CreateStrategy400JSONResponse{invalidArgument(ctx, err.Error()).badRequest()}, nil
+		return CreateStrategy400JSONResponse{strategyInvalid(ctx, err)}, nil
 	case errors.Is(err, strategy.ErrConflict):
 		return CreateStrategy409JSONResponse{strategyConflict(ctx)}, nil
 	default:
@@ -141,20 +117,14 @@ func (api *api) CreateStrategy(ctx context.Context, request CreateStrategyReques
 }
 
 func (api *api) UpdateStrategy(ctx context.Context, request UpdateStrategyRequestObject) (UpdateStrategyResponseObject, error) {
-	body := request.Body
-	entry, err := api.strategies.Update(ctx, strategy.Strategy{
-		ID: request.StrategyId, Name: body.Name, Signal: bool(body.Signal), Direction: strategy.Direction(body.Direction), Expression: body.Expression, ExitExpression: body.ExitExpression,
-		TakeProfitExpression: body.TakeProfitExpression, StopLossExpression: body.StopLossExpression,
-		Coins: body.Coins, CoinSource: strategy.CoinSource(body.CoinSource),
-		MarketCap:   strategy.MarketCapRange{MinUSD: body.MinMarketCapUsd, MaxUSD: body.MaxMarketCapUsd},
-		TargetRatio: fromNullable(body.TargetRatio), Window: fromNullable(body.Window),
-		Message: body.Message,
-	})
+	item := strategyFromDTO(request.Body.Rules, request.Body.Coins)
+	item.ID, item.Name, item.Message = request.StrategyId, request.Body.Name, request.Body.Message
+	entry, err := api.Strategies.Update(ctx, item)
 	switch {
 	case err == nil:
-		return UpdateStrategy200JSONResponse(api.strategyDTO(entry)), nil
+		return UpdateStrategy200JSONResponse(strategyDTO(entry)), nil
 	case errors.Is(err, strategy.ErrInvalidArgument):
-		return UpdateStrategy400JSONResponse{invalidArgument(ctx, err.Error()).badRequest()}, nil
+		return UpdateStrategy400JSONResponse{strategyInvalid(ctx, err)}, nil
 	case errors.Is(err, strategy.ErrNotFound):
 		return UpdateStrategy404JSONResponse{strategyNotFound(ctx)}, nil
 	case errors.Is(err, strategy.ErrConflict):
@@ -165,12 +135,12 @@ func (api *api) UpdateStrategy(ctx context.Context, request UpdateStrategyReques
 }
 
 func (api *api) SetStrategyEnabled(ctx context.Context, request SetStrategyEnabledRequestObject) (SetStrategyEnabledResponseObject, error) {
-	entry, err := api.strategies.SetEnabled(ctx, request.StrategyId, request.Body.Enabled)
+	entry, err := api.Strategies.SetEnabled(ctx, request.StrategyId, request.Body.Enabled)
 	switch {
 	case err == nil:
-		return SetStrategyEnabled200JSONResponse(api.strategyDTO(entry)), nil
+		return SetStrategyEnabled200JSONResponse(strategyDTO(entry)), nil
 	case errors.Is(err, strategy.ErrInvalidArgument):
-		return SetStrategyEnabled400JSONResponse{invalidArgument(ctx, err.Error()).badRequest()}, nil
+		return SetStrategyEnabled400JSONResponse{strategyInvalid(ctx, err)}, nil
 	case errors.Is(err, strategy.ErrNotFound):
 		return SetStrategyEnabled404JSONResponse{strategyNotFound(ctx)}, nil
 	default:
@@ -179,7 +149,7 @@ func (api *api) SetStrategyEnabled(ctx context.Context, request SetStrategyEnabl
 }
 
 func (api *api) DeleteStrategy(ctx context.Context, request DeleteStrategyRequestObject) (DeleteStrategyResponseObject, error) {
-	err := api.strategies.Delete(ctx, request.StrategyId)
+	err := api.Strategies.Delete(ctx, request.StrategyId)
 	switch {
 	case err == nil:
 		return DeleteStrategy204Response{}, nil
@@ -191,11 +161,23 @@ func (api *api) DeleteStrategy(ctx context.Context, request DeleteStrategyReques
 }
 
 func (api *api) BacktestStrategy(ctx context.Context, request BacktestStrategyRequestObject) (BacktestStrategyResponseObject, error) {
+	body := request.Body
+	backtested, err := body.Strategy.ValueByDiscriminator()
+	if err != nil {
+		return BacktestStrategy500JSONResponse{api.internalError(ctx, "backtest_strategy", err)}, nil
+	}
 	timed, cancel := context.WithTimeout(ctx, backtestTimeout)
 	defer cancel()
-	from, to := backtestPeriod(request.Params.From, request.Params.To)
+	from, to := backtestPeriod(body.From, body.To)
+	withChart := body.Chart != nil && *body.Chart
 	started := time.Now()
-	backtest, err := api.strategies.Backtest(timed, request.StrategyId, request.Params.Symbol, from, to, request.Params.Chart != nil && *request.Params.Chart)
+	var backtest strategy.Backtest
+	switch backtested := backtested.(type) {
+	case SavedBacktestedStrategy:
+		backtest, err = api.Strategies.Backtest(timed, backtested.Id, body.Symbol, from, to, withChart)
+	case DraftBacktestedStrategy:
+		backtest, err = api.Strategies.BacktestDraft(timed, strategyFromDTO(backtested.Rules, StrategyCoins{}), body.Symbol, from, to, withChart)
+	}
 	switch {
 	case err == nil:
 		dto, err := backtestDTO(backtest)
@@ -209,45 +191,13 @@ func (api *api) BacktestStrategy(ctx context.Context, request BacktestStrategyRe
 	case errors.Is(err, strategy.ErrBacktestBusy):
 		return BacktestStrategy429JSONResponse{backtestBusy(ctx)}, nil
 	case errors.Is(err, strategy.ErrInvalidArgument):
-		return BacktestStrategy400JSONResponse{invalidArgument(ctx, err.Error()).badRequest()}, nil
+		return BacktestStrategy400JSONResponse{strategyInvalid(ctx, err)}, nil
 	case errors.Is(err, strategy.ErrNotFound):
-		return backtestNotFound(ErrorResponse(strategyNotFound(ctx))), nil
+		return BacktestStrategy404JSONResponse(strategyNotFound(ctx)), nil
 	case errors.Is(err, market.ErrInstrumentNotFound):
-		return backtestNotFound(symbolNotFound(ctx).body), nil
+		return BacktestStrategy404JSONResponse(symbolNotFound(ctx).body), nil
 	default:
 		return BacktestStrategy500JSONResponse{api.internalError(ctx, "backtest_strategy", err)}, nil
-	}
-}
-
-func (api *api) BacktestStrategyDraft(ctx context.Context, request BacktestStrategyDraftRequestObject) (BacktestStrategyDraftResponseObject, error) {
-	timed, cancel := context.WithTimeout(ctx, backtestTimeout)
-	defer cancel()
-	body := request.Body
-	from, to := backtestPeriod(body.From, body.To)
-	started := time.Now()
-	backtest, err := api.strategies.BacktestDraft(timed, strategy.Strategy{
-		Signal: bool(body.Signal), Direction: strategy.Direction(body.Direction), Expression: body.Expression, ExitExpression: body.ExitExpression,
-		TakeProfitExpression: body.TakeProfitExpression, StopLossExpression: body.StopLossExpression,
-		TargetRatio: fromNullable(body.TargetRatio), Window: fromNullable(body.Window),
-	}, body.Symbol, from, to, body.Chart != nil && *body.Chart)
-	switch {
-	case err == nil:
-		dto, err := backtestDTO(backtest)
-		if err != nil {
-			return BacktestStrategyDraft500JSONResponse{api.internalError(ctx, "backtest_strategy_draft", err)}, nil
-		}
-		dto.DurationMs = float64(time.Since(started)) / float64(time.Millisecond)
-		return BacktestStrategyDraft200JSONResponse(dto), nil
-	case backtestExpired(timed, err):
-		return BacktestStrategyDraft503JSONResponse{backtestTooHeavy(ctx)}, nil
-	case errors.Is(err, strategy.ErrBacktestBusy):
-		return BacktestStrategyDraft429JSONResponse{backtestBusy(ctx)}, nil
-	case errors.Is(err, strategy.ErrInvalidArgument):
-		return BacktestStrategyDraft400JSONResponse{invalidArgument(ctx, err.Error()).badRequest()}, nil
-	case errors.Is(err, market.ErrInstrumentNotFound):
-		return BacktestStrategyDraft404JSONResponse{symbolNotFound(ctx).symbolNotFound()}, nil
-	default:
-		return BacktestStrategyDraft500JSONResponse{api.internalError(ctx, "backtest_strategy_draft", err)}, nil
 	}
 }
 
@@ -385,17 +335,11 @@ func backtestExpired(timed context.Context, err error) bool {
 }
 
 func backtestTooHeavy(ctx context.Context) BacktestTooHeavyJSONResponse {
-	body := newAPIError(ctx, http.StatusServiceUnavailable, "backtest_too_heavy", "The backtest did not finish within its time limit", nil).body
-	return BacktestTooHeavyJSONResponse{Body: body, Headers: BacktestTooHeavyResponseHeaders{XRequestID: body.RequestId}}
+	return BacktestTooHeavyJSONResponse(newAPIError(ctx, http.StatusServiceUnavailable, "backtest_too_heavy", "The backtest did not finish within its time limit", nil).body)
 }
 
 func backtestBusy(ctx context.Context) BacktestBusyJSONResponse {
-	body := newAPIError(ctx, http.StatusTooManyRequests, "backtest_busy", "Two backtests already run; retry once one ends", nil).body
-	return BacktestBusyJSONResponse{Body: body, Headers: BacktestBusyResponseHeaders{XRequestID: body.RequestId}}
-}
-
-func backtestNotFound(body ErrorResponse) BacktestStrategy404JSONResponse {
-	return BacktestStrategy404JSONResponse{Body: body, Headers: BacktestStrategy404ResponseHeaders{XRequestID: body.RequestId}}
+	return BacktestBusyJSONResponse(newAPIError(ctx, http.StatusTooManyRequests, "backtest_busy", "Two backtests already run; retry once one ends", nil).body)
 }
 
 func strategyNotFound(ctx context.Context) StrategyNotFoundJSONResponse {
@@ -406,13 +350,42 @@ func strategyConflict(ctx context.Context) StrategyConflictJSONResponse {
 	return StrategyConflictJSONResponse(newAPIError(ctx, http.StatusConflict, "strategy_exists", "Another strategy has this name", nil).body)
 }
 
-func (api *api) strategyDTO(entry strategy.Entry) Strategy {
+// strategyInvalid reports err, an invalid strategy, with its problems.
+func strategyInvalid(ctx context.Context, err error) StrategyInvalidJSONResponse {
+	var invalid *strategy.InvalidError
+	if !errors.As(err, &invalid) {
+		invalid = &strategy.InvalidError{Problems: []string{err.Error()}}
+	}
+	return StrategyInvalidJSONResponse{Error: StrategyInvalidError{
+		Code: StrategyInvalidErrorCodeInvalidArgument, Message: invalid.Error(),
+		Details: &StrategyProblems{Problems: slices.Clone(invalid.Problems)},
+	}, RequestId: RequestIdentifier(ctx)}
+}
+
+// strategyFromDTO reads the rules and the coins of a strategy.
+func strategyFromDTO(rules StrategyRules, coins StrategyCoins) strategy.Strategy {
+	return strategy.Strategy{
+		Signal: rules.Signal, Direction: strategy.Direction(rules.Direction), Expression: rules.Expression,
+		ExitExpression: rules.ExitExpression, TakeProfitExpression: rules.TakeProfitExpression, StopLossExpression: rules.StopLossExpression,
+		TargetRatio: fromNullable(rules.TargetRatio), Window: fromNullable(rules.Window),
+		Coins: coins.Symbols, CoinSource: strategy.CoinSource(coins.Source),
+		MarketCap: strategy.MarketCapRange{MinUSD: coins.MinMarketCapUsd, MaxUSD: coins.MaxMarketCapUsd},
+	}
+}
+
+// strategyDTO writes a strategy with its rules and coins.
+func strategyDTO(entry strategy.Entry) Strategy {
 	dto := Strategy{
-		Id: entry.ID, Name: entry.Name, Signal: StrategySignal(entry.Signal), Direction: Direction(entry.Direction), Expression: entry.Expression, ExitExpression: entry.ExitExpression,
-		TakeProfitExpression: entry.TakeProfitExpression, StopLossExpression: entry.StopLossExpression,
-		Coins: append([]string{}, entry.Coins...), CoinSource: StrategyCoinSource(entry.CoinSource),
-		MinMarketCapUsd: entry.MarketCap.MinUSD, MaxMarketCapUsd: entry.MarketCap.MaxUSD,
-		TargetRatio: toNullable[SignalTargetRatio](entry.TargetRatio), Window: toNullable[SignalWindow](entry.Window),
+		Id: entry.ID, Name: entry.Name,
+		Rules: StrategyRules{
+			Signal: entry.Signal, Direction: Direction(entry.Direction), Expression: entry.Expression,
+			ExitExpression: entry.ExitExpression, TakeProfitExpression: entry.TakeProfitExpression, StopLossExpression: entry.StopLossExpression,
+			TargetRatio: toNullable[SignalTargetRatio](entry.TargetRatio), Window: toNullable[SignalWindow](entry.Window),
+		},
+		Coins: StrategyCoins{
+			Source: StrategyCoinSource(entry.CoinSource), Symbols: append([]string{}, entry.Coins...),
+			MinMarketCapUsd: entry.MarketCap.MinUSD, MaxMarketCapUsd: entry.MarketCap.MaxUSD,
+		},
 		Message: entry.Message, Enabled: entry.Enabled, Valid: entry.Compiled != nil,
 	}
 	if entry.Problem != "" {

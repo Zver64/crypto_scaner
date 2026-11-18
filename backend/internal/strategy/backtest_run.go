@@ -2,7 +2,6 @@ package strategy
 
 import (
 	"context"
-	"fmt"
 	"slices"
 	"time"
 
@@ -84,7 +83,7 @@ func simulate(ctx context.Context, replay *replay, entry Entry, instrument Instr
 		candleCount++
 		next, events, _, err := current.advance(entry, instrument.ID, state, false)
 		if err != nil {
-			return fmt.Errorf("%w: %w", ErrInvalidArgument, err)
+			return invalidBy(err)
 		}
 		state = next
 		for _, event := range events {

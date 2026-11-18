@@ -26,7 +26,7 @@ func TestBacktestIndicatorFlagAndCappedSignals(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, server := newFakeAPI(t, map[string]string{"GET /api/v1/admin/strategies/00000000-0000-7000-8000-000000000003/backtest?symbol=BTCUSDT": string(body)})
+	_, server := newFakeAPI(t, map[string]string{"POST /api/v1/admin/strategy-backtests": string(body)})
 	home := writeProfile(t, server.URL)
 	for _, indicators := range []bool{false, true} {
 		args := []string{"backtest", "--strategy", "00000000-0000-7000-8000-000000000003", "--symbol", "BTCUSDT"}

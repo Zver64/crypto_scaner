@@ -17,7 +17,7 @@ type Users interface {
 }
 
 func (api *api) ListUsers(ctx context.Context, _ ListUsersRequestObject) (ListUsersResponseObject, error) {
-	items, err := api.users.List(ctx)
+	items, err := api.Users.List(ctx)
 	if err != nil {
 		return ListUsers500JSONResponse{api.internalError(ctx, "list_users", err)}, nil
 	}
@@ -29,7 +29,7 @@ func (api *api) ListUsers(ctx context.Context, _ ListUsersRequestObject) (ListUs
 }
 
 func (api *api) DeleteUser(ctx context.Context, request DeleteUserRequestObject) (DeleteUserResponseObject, error) {
-	err := api.users.Delete(ctx, request.TelegramId)
+	err := api.Users.Delete(ctx, request.TelegramId)
 	switch {
 	case err == nil:
 		return DeleteUser204Response{}, nil
@@ -43,7 +43,7 @@ func (api *api) DeleteUser(ctx context.Context, request DeleteUserRequestObject)
 }
 
 func (api *api) UpdateUser(ctx context.Context, request UpdateUserRequestObject) (UpdateUserResponseObject, error) {
-	err := api.users.SetStrategyAlerts(ctx, request.TelegramId, request.Body.StrategyAlerts)
+	err := api.Users.SetStrategyAlerts(ctx, request.TelegramId, request.Body.StrategyAlerts)
 	switch {
 	case err == nil:
 		return UpdateUser204Response{}, nil

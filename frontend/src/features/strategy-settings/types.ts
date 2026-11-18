@@ -8,11 +8,11 @@ import type {
 import type {
 	CandleInterval,
 	Direction,
-	Strategy,
 	StrategyCoinSource,
 	StrategyID,
-	StrategyIndicatorOutput,
-	StrategyIndicatorType,
+	StrategyRules,
+	IndicatorOutput,
+	IndicatorType,
 } from "@/api/generated/models";
 import type { PriceSetup } from "@/features/strategy-settings/strategy-price-input/types";
 import type { useStrategyForm } from "@/features/strategy-settings/use-strategy-form";
@@ -128,8 +128,8 @@ export interface StrategyIndicatorVariable {
 	// The function reading the output, such as rsi or bbands_upperband; tells
 	// the variables apart.
 	name: string;
-	indicator: StrategyIndicatorType;
-	output: StrategyIndicatorOutput;
+	indicator: IndicatorType;
+	output: IndicatorOutput;
 }
 
 // An indicator call as the builder edits it, such as
@@ -165,7 +165,7 @@ export interface StrategyRuleVariables extends StrategyVariables {
 
 // The rules of a strategy as the builder opens them: spelled canonically.
 export type CanonicalRules = Pick<
-	Strategy,
+	StrategyRules,
 	| "exit_expression"
 	| "expression"
 	| "stop_loss_expression"

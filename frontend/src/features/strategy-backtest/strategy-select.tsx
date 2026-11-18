@@ -35,7 +35,7 @@ export function StrategySelect({
 				.map((kind) => ({
 					group: kindNouns[kind].title,
 					items: (strategies.data ?? [])
-						.filter((item) => strategyKind(item) === kind)
+						.filter((item) => strategyKind(item.rules) === kind)
 						.map(({ enabled, id, name, valid }) => ({
 							disabled: !valid,
 							label: !valid

@@ -24,7 +24,7 @@ func newAPITokenHandler(store *memorySessionStore) (http.Handler, *auth.Sessions
 	logger := logging.New(io.Discard, "error", logging.Options{})
 	sessions := auth.NewSessions(store, telegram.New(fixtureBotToken, 15*time.Minute, telegram.Options{Now: func() time.Time { return fixtureNow }}),
 		administratorTelegramID, time.Hour, 24*time.Hour, logger, auth.SessionOptions{Now: func() time.Time { return fixtureNow }})
-	return httpapi.New(logger, httpapi.Dependencies{Readiness: readinessStub{}, Sessions: sessions, APITokens: sessions}, httpapi.Options{}), sessions
+	return newTestHandler(logger, httpapi.Dependencies{Readiness: readinessStub{}, Sessions: sessions, APITokens: sessions}, httpapi.Options{}), sessions
 }
 
 func call(t *testing.T, handler http.Handler, method, path, token, body string) *httptest.ResponseRecorder {

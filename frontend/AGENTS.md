@@ -130,7 +130,7 @@ tanstackIntent:
 
 ## Backend-driven UI
 
-- Market Scan, Top Market Cap, and Favorites tables come from the backend `table` (columns, kinds, sortability, default sort, cells), rendered generically by `MarketScanResultsTable`; never add columns, row fields, or cell calculations in the frontend. Only a new `TableColumnKind` needs a renderer in `cellRenderers`. Favorites get their table only from `POST /api/v1/favorites/analysis`.
+- Market Scan, Top Market Cap, and Favorites tables come from the backend `table` (columns, kinds, sortability, default sort, cells), rendered generically by `MarketScanResultsTable`; never add columns, row fields, or cell calculations in the frontend. Only a new `TableColumnKind` needs a renderer in `cellRenderers`. Favorites get their table only from `POST /api/v1/analysis/market` with the `favorites` universe.
 - Coin charts arrive only over the live WebSocket; backtest charts only as immutable snapshots in the backtest response (`chart: true`).
 - Indicators arrive on chart pages as drawn shapes (`line`, `area`, `markers`, `segments`) with their panes; the frontend renders shape kinds, one component and one data function per kind, and never computes indicator geometry, colors, or placement. A new way of drawing is a backend drawer; only a new shape kind needs frontend code.
 - Chart indicators, scanner indicator types and parameters, the strategy catalog, and `Of` coins come from backend catalogs and descriptors; never hardcode indicator types, names, parameters, validation, colors, or per-indicator code. A catalog may be empty.

@@ -509,3 +509,16 @@ func TestValidateListsProblemsOfIndicatorsItCannotDescribe(t *testing.T) {
 		t.Fatalf("Validate() = %+v, want problems and only rsi described", validation)
 	}
 }
+
+// Expressions that do not compile make an invalid strategy that lists the
+// problems of every rule, those of other rules than the entry rule naming
+// their rule.
+func TestInvalidExpressionsAreInvalidStrategies(t *testing.T) {
+	service := validationTestService(t)
+	_, err := service.compileEntry(Strategy{Expression: `bar > 1`, ExitExpression: "foo > 1", StopLossExpression: `close("1h")`})
+	var invalid *InvalidError
+	if !errors.Is(err, ErrInvalidArgument) || !errors.As(err, &invalid) || len(invalid.Problems) != 2 ||
+		!strings.HasPrefix(invalid.Problems[0], "unknown name bar") || !strings.HasPrefix(invalid.Problems[1], "exit rule: unknown name foo") {
+		t.Fatalf("compileEntry() error = %v, want the problems of the entry and the exit rule", err)
+	}
+}

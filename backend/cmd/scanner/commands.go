@@ -136,7 +136,7 @@ func (c *cli) validateCommand() *cobra.Command {
 				return err
 			}
 			if problems := validation.JSON200.Errors; len(problems) > 0 {
-				return &cliError{code: "invalid_expression", message: "the expression is invalid", details: problems}
+				return &cliError{code: "invalid_expression", message: "the expression is invalid", details: apiclient.StrategyProblems{Problems: problems}}
 			}
 			c.print(command, validation.Body, func(w io.Writer) { fmt.Fprintln(w, "ok") })
 			return nil
@@ -281,26 +281,17 @@ func (c *cli) createStrategyCommand() *cobra.Command {
 		Short: "Save a disabled strategy; it reads indicators that are not configured without adding them",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(command *cobra.Command, args []string) error {
-			body := apiclient.StrategyInput{
-				Name: args[0], Expression: rules.expression, ExitExpression: rules.exit, TakeProfitExpression: rules.takeProfit, StopLossExpression: rules.stopLoss, Message: message,
-			}
-			var err error
-			if body.Direction, err = strategiesKind.directionFlag(rules.direction); err != nil {
-				return err
-			}
+			body := apiclient.StrategyInput{Name: args[0], Rules: rules.rules(), Message: message}
 			client, err := c.client()
 			if err != nil {
 				return err
 			}
-			if body.Coins, body.CoinSource, err = c.resolveCoins(command, client, coins); err != nil {
-				return err
-			}
-			if err := c.prepareStrategyRules(command, client, rules.rules()); err != nil {
+			if body.Coins.Symbols, body.Coins.Source, err = c.resolveCoins(command, client, coins); err != nil {
 				return err
 			}
 			created, err := client.CreateStrategyWithResponse(command.Context(), body)
 			if err == nil {
-				err = c.check(created, created.JSON201 != nil, created.JSON400, created.JSON409)
+				err = c.check(created, created.JSON201 != nil, strategyInvalid(created.JSON400), created.JSON409)
 			}
 			if err != nil {
 				return err
@@ -331,48 +322,12 @@ func (f *strategyRuleFlags) add(command *cobra.Command) {
 	_ = command.RegisterFlagCompletionFunc("direction", strategiesKind.completeDirections())
 }
 
-// rules lists the expressions for prepareStrategyRules.
-func (f strategyRuleFlags) rules() []strategyRule {
-	return []strategyRule{
-		{f.expression, apiclient.StrategyValidationInputKindEntry, "the entry rule"},
-		{f.exit, apiclient.StrategyValidationInputKindExit, "the exit rule"},
-		{f.takeProfit, apiclient.StrategyValidationInputKindPrice, "the take profit"},
-		{f.stopLoss, apiclient.StrategyValidationInputKindPrice, "the stop loss"},
+// rules returns the rules of a new strategy; the server checks them.
+func (f strategyRuleFlags) rules() apiclient.StrategyRules {
+	return apiclient.StrategyRules{
+		Direction: apiclient.Direction(f.direction), Expression: f.expression,
+		ExitExpression: f.exit, TakeProfitExpression: f.takeProfit, StopLossExpression: f.stopLoss,
 	}
-}
-
-// strategyRule is an expression of a strategy, of kind, that name names in
-// errors.
-type strategyRule struct {
-	expression string
-	kind       apiclient.StrategyValidationInputKind
-	name       string
-}
-
-// prepareStrategyRules validates every rule before any write, reporting
-// every invalid rule at once. An empty rule other than the entry rule is
-// absent and needs nothing.
-func (c *cli) prepareStrategyRules(command *cobra.Command, client *apiclient.ClientWithResponses, rules []strategyRule) error {
-	var problems []string
-	for _, rule := range rules {
-		if rule.expression == "" && rule.kind != apiclient.StrategyValidationInputKindEntry {
-			continue
-		}
-		validation, err := client.ValidateStrategyWithResponse(command.Context(), apiclient.StrategyValidationInput{Expression: rule.expression, Kind: &rule.kind})
-		if err == nil {
-			err = c.check(validation, validation.JSON200 != nil, validation.JSON400)
-		}
-		if err != nil {
-			return err
-		}
-		for _, problem := range validation.JSON200.Errors {
-			problems = append(problems, rule.name+": "+problem)
-		}
-	}
-	if len(problems) > 0 {
-		return &cliError{code: "invalid_expression", message: "invalid rules; nothing was sent", details: problems}
-	}
-	return nil
 }
 
 func (c *cli) updateStrategyCommand() *cobra.Command {
@@ -403,40 +358,27 @@ func (c *cli) updateStrategyCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			body := apiclient.StrategyUpdate{
-				Name: current.Name, Signal: current.Signal, Direction: current.Direction, Expression: current.Expression, ExitExpression: current.ExitExpression,
-				TakeProfitExpression: current.TakeProfitExpression, StopLossExpression: current.StopLossExpression,
-				Coins: current.Coins, CoinSource: current.CoinSource, Message: current.Message,
-			}
+			body := apiclient.StrategyUpdate{Name: current.Name, Rules: current.Rules, Coins: current.Coins, Message: current.Message}
 			// Chosen coins replace the current ones.
 			if coins.changed() {
-				if body.Coins, body.CoinSource, err = c.resolveCoins(command, client, coins); err != nil {
+				if body.Coins.Symbols, body.Coins.Source, err = c.resolveCoins(command, client, coins); err != nil {
 					return err
 				}
 			}
-			if flags.Changed("name") {
-				body.Name = name
-			}
-			if flags.Changed("message") {
-				body.Message = message
-			}
-			var rules []strategyRule
 			for _, change := range []struct {
 				flag   string
 				target *string
-				rule   strategyRule
+				value  string
 			}{
-				{"expr", &body.Expression, strategyRule{expression, apiclient.StrategyValidationInputKindEntry, "the entry rule"}},
-				{"exit", &body.ExitExpression, strategyRule{exit, apiclient.StrategyValidationInputKindExit, "the exit rule"}},
-				{"take-profit", &body.TakeProfitExpression, strategyRule{takeProfit, apiclient.StrategyValidationInputKindPrice, "the take profit"}},
-				{"stop-loss", &body.StopLossExpression, strategyRule{stopLoss, apiclient.StrategyValidationInputKindPrice, "the stop loss"}},
+				{"name", &body.Name, name}, {"message", &body.Message, message},
+				{"expr", &body.Rules.Expression, expression}, {"exit", &body.Rules.ExitExpression, exit},
+				{"take-profit", &body.Rules.TakeProfitExpression, takeProfit}, {"stop-loss", &body.Rules.StopLossExpression, stopLoss},
 			} {
 				if flags.Changed(change.flag) {
-					*change.target = change.rule.expression
-					rules = append(rules, change.rule)
+					*change.target = change.value
 				}
 			}
-			return c.update(command, client, strategiesKind, *current, body, rules)
+			return c.update(command, client, strategiesKind, id, body)
 		},
 	}
 	command.Flags().StringVar(&expression, "expr", "", "the entry rule `EXPR`ession; omitted preserves the current one")

@@ -31,7 +31,7 @@ describe("indicator scale", () => {
 describe("scanner indicator input", () => {
 	const type: IndicatorType = {
 		group: "Momentum",
-		outputs: ["rsi"],
+		outputs: [{ name: "rsi", sparse: false }],
 		overlay: false,
 		parameters: [
 			{
@@ -42,7 +42,7 @@ describe("scanner indicator input", () => {
 				default: 0,
 				description: "",
 				key: "source",
-				kind: "choice",
+				kind: "source",
 				title: "Source",
 			},
 			{

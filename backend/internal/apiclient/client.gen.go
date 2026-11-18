@@ -337,21 +337,39 @@ func (e Direction) Valid() bool {
 	}
 }
 
+// Defines values for DraftBacktestedStrategyKind.
+const (
+	Draft DraftBacktestedStrategyKind = "draft"
+)
+
+// Valid indicates whether the value is a known member of the DraftBacktestedStrategyKind enum.
+func (e DraftBacktestedStrategyKind) Valid() bool {
+	switch e {
+	case Draft:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for IndicatorParameterKind.
 const (
-	IndicatorParameterKindChoice  IndicatorParameterKind = "choice"
-	IndicatorParameterKindInteger IndicatorParameterKind = "integer"
-	IndicatorParameterKindReal    IndicatorParameterKind = "real"
+	Choice  IndicatorParameterKind = "choice"
+	Integer IndicatorParameterKind = "integer"
+	Real    IndicatorParameterKind = "real"
+	Source  IndicatorParameterKind = "source"
 )
 
 // Valid indicates whether the value is a known member of the IndicatorParameterKind enum.
 func (e IndicatorParameterKind) Valid() bool {
 	switch e {
-	case IndicatorParameterKindChoice:
+	case Choice:
 		return true
-	case IndicatorParameterKindInteger:
+	case Integer:
 		return true
-	case IndicatorParameterKindReal:
+	case Real:
+		return true
+	case Source:
 		return true
 	default:
 		return false
@@ -385,6 +403,24 @@ const (
 func (e LivenessResponseStatus) Valid() bool {
 	switch e {
 	case LivenessResponseStatusOk:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for Market.
+const (
+	MarketCoinmPerpetual Market = "coinm_perpetual"
+	MarketSpot           Market = "spot"
+)
+
+// Valid indicates whether the value is a known member of the Market enum.
+func (e Market) Valid() bool {
+	switch e {
+	case MarketCoinmPerpetual:
+		return true
+	case MarketSpot:
 		return true
 	default:
 		return false
@@ -426,16 +462,19 @@ func (e MarketSortField) Valid() bool {
 
 // Defines values for MarketUniverse.
 const (
-	CoinmPerpetual MarketUniverse = "coinm_perpetual"
-	Spot           MarketUniverse = "spot"
+	MarketUniverseCoinmPerpetual MarketUniverse = "coinm_perpetual"
+	MarketUniverseFavorites      MarketUniverse = "favorites"
+	MarketUniverseSpot           MarketUniverse = "spot"
 )
 
 // Valid indicates whether the value is a known member of the MarketUniverse enum.
 func (e MarketUniverse) Valid() bool {
 	switch e {
-	case CoinmPerpetual:
+	case MarketUniverseCoinmPerpetual:
 		return true
-	case Spot:
+	case MarketUniverseFavorites:
+		return true
+	case MarketUniverseSpot:
 		return true
 	default:
 		return false
@@ -490,6 +529,21 @@ func (e ReadinessResponseStatus) Valid() bool {
 	case NotReady:
 		return true
 	case Ready:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SavedBacktestedStrategyKind.
+const (
+	Saved SavedBacktestedStrategyKind = "saved"
+)
+
+// Valid indicates whether the value is a known member of the SavedBacktestedStrategyKind enum.
+func (e SavedBacktestedStrategyKind) Valid() bool {
+	switch e {
+	case Saved:
 		return true
 	default:
 		return false
@@ -586,24 +640,15 @@ func (e StrategyCoinSource) Valid() bool {
 	}
 }
 
-// Defines values for StrategyIndicatorParameterKind.
+// Defines values for StrategyInvalidErrorCode.
 const (
-	StrategyIndicatorParameterKindChoice  StrategyIndicatorParameterKind = "choice"
-	StrategyIndicatorParameterKindInteger StrategyIndicatorParameterKind = "integer"
-	StrategyIndicatorParameterKindReal    StrategyIndicatorParameterKind = "real"
-	StrategyIndicatorParameterKindSource  StrategyIndicatorParameterKind = "source"
+	StrategyInvalidErrorCodeInvalidArgument StrategyInvalidErrorCode = "invalid_argument"
 )
 
-// Valid indicates whether the value is a known member of the StrategyIndicatorParameterKind enum.
-func (e StrategyIndicatorParameterKind) Valid() bool {
+// Valid indicates whether the value is a known member of the StrategyInvalidErrorCode enum.
+func (e StrategyInvalidErrorCode) Valid() bool {
 	switch e {
-	case StrategyIndicatorParameterKindChoice:
-		return true
-	case StrategyIndicatorParameterKindInteger:
-		return true
-	case StrategyIndicatorParameterKindReal:
-		return true
-	case StrategyIndicatorParameterKindSource:
+	case StrategyInvalidErrorCodeInvalidArgument:
 		return true
 	default:
 		return false
@@ -960,6 +1005,11 @@ type BacktestTradeStats struct {
 // reads inside percentile windows and unknown values are left out.
 type BacktestValues map[string]float64
 
+// BacktestedStrategy A saved strategy, by its id, or the rules of an unsaved one.
+type BacktestedStrategy struct {
+	union json.RawMessage
+}
+
 // Candle defines model for Candle.
 type Candle struct {
 	Close            float64   `json:"close"`
@@ -1238,9 +1288,23 @@ type CurrentUser struct {
 // Direction How a strategy trades, long or short, or the price move a signal
 // expects after its entry signals: none in particular (simple), up,
 // down, or sideways. A simple signal has no target ratio or window. A short
-// strategy always has a take profit and a stop loss. Fixed at creation:
-// an update that changes it is refused.
+// strategy always has a take profit and a stop loss.
 type Direction string
+
+// DraftBacktestedStrategy An unsaved strategy or signal, whose rules are checked as a save checks them.
+type DraftBacktestedStrategy struct {
+	Kind DraftBacktestedStrategyKind `json:"kind"`
+
+	// Rules How a strategy trades or what a signal announces, all that a backtest
+	// reads. A signal buys nothing and only announces its entry signals, so
+	// its exit rule, take profit, and stop loss are empty. `signal` and
+	// `direction` are fixed at creation: an update that changes them is
+	// refused.
+	Rules StrategyRules `json:"rules"`
+}
+
+// DraftBacktestedStrategyKind defines model for DraftBacktestedStrategy.Kind.
+type DraftBacktestedStrategyKind string
 
 // ErrorResponse defines model for ErrorResponse.
 type ErrorResponse struct {
@@ -1288,8 +1352,18 @@ type GridLimitsResponse struct {
 
 // IndicatorChoice defines model for IndicatorChoice.
 type IndicatorChoice struct {
-	Title string `json:"title"`
-	Value int    `json:"value"`
+	// Name The name calls write for the choice, such as `volume`; absent for a choice calls write as a number, or, of a source, only by leaving the source out.
+	Name  *string `json:"name,omitempty"`
+	Title string  `json:"title"`
+	Value int     `json:"value"`
+}
+
+// IndicatorOutput defines model for IndicatorOutput.
+type IndicatorOutput struct {
+	Name string `json:"name"`
+
+	// Sparse The output is empty on some candles, such as `pivot_high`; it cannot be the source of another indicator.
+	Sparse bool `json:"sparse"`
 }
 
 // IndicatorParameter defines model for IndicatorParameter.
@@ -1299,23 +1373,33 @@ type IndicatorParameter struct {
 	Description string             `json:"description"`
 	Key         string             `json:"key"`
 
-	// Kind `choice` is an integer limited to `choices`; `minimum` and `maximum` bound the other kinds.
+	// Kind `choice` is an integer limited to `choices`; `source` is the
+	// series the indicator reads: one of `choices`, which are candle
+	// fields, or, in strategy calls, a call of another indicator on the
+	// same period; `minimum` and `maximum` bound the other kinds.
 	Kind    IndicatorParameterKind `json:"kind"`
 	Maximum *float64               `json:"maximum,omitempty"`
 	Minimum *float64               `json:"minimum,omitempty"`
 	Title   string                 `json:"title"`
 }
 
-// IndicatorParameterKind `choice` is an integer limited to `choices`; `minimum` and `maximum` bound the other kinds.
+// IndicatorParameterKind `choice` is an integer limited to `choices`; `source` is the
+// series the indicator reads: one of `choices`, which are candle
+// fields, or, in strategy calls, a call of another indicator on the
+// same period; `minimum` and `maximum` bound the other kinds.
 type IndicatorParameterKind string
 
-// IndicatorType defines model for IndicatorType.
+// IndicatorType An indicator the scanner can calculate, as calls name it, such as `bbands`, with the parameters that follow the period.
 type IndicatorType struct {
-	Group   string   `json:"group"`
-	Outputs []string `json:"outputs"`
+	Group string `json:"group"`
+
+	// Outputs The outputs; calls of an indicator with several add the output to the type, such as `bbands_upperband`, calls of one with a single output are named by the type alone.
+	Outputs []IndicatorOutput `json:"outputs"`
 
 	// Overlay Charts draw it over the candles; otherwise in a pane below.
-	Overlay    bool                 `json:"overlay"`
+	Overlay bool `json:"overlay"`
+
+	// Parameters The parameters in the order calls write them after the period.
 	Parameters []IndicatorParameter `json:"parameters"`
 	Title      string               `json:"title"`
 	Type       string               `json:"type"`
@@ -1368,6 +1452,9 @@ type LivenessResponse struct {
 // LivenessResponseStatus defines model for LivenessResponse.Status.
 type LivenessResponseStatus string
 
+// Market A Binance market the coin of a table row trades on.
+type Market string
+
 // MarketAnalysisItem defines model for MarketAnalysisItem.
 type MarketAnalysisItem struct {
 	Evaluations []Evaluation `json:"evaluations"`
@@ -1383,7 +1470,7 @@ type MarketAnalysisRequest struct {
 	Limit *int        `json:"limit,omitempty"`
 	Sort  *MarketSort `json:"sort,omitempty"`
 
-	// Universe Instruments to select. `spot` (the default) selects every active Spot USDT instrument; `coinm_perpetual` selects only those whose coin has a trading Binance COIN-M perpetual contract.
+	// Universe Instruments to select. `spot` (the default) selects every active Spot USDT instrument; `coinm_perpetual` selects only those whose coin has a trading Binance COIN-M perpetual contract; `favorites` selects the current user's favorites: an analysis has a row for every favorite, active or not, in the favorites order, with the favorites table, and an instrument list only the active ones.
 	Universe *MarketUniverse `json:"universe,omitempty"`
 }
 
@@ -1426,7 +1513,7 @@ type MarketTable struct {
 	Rows        []TableRow    `json:"rows"`
 }
 
-// MarketUniverse Instruments to select. `spot` (the default) selects every active Spot USDT instrument; `coinm_perpetual` selects only those whose coin has a trading Binance COIN-M perpetual contract.
+// MarketUniverse Instruments to select. `spot` (the default) selects every active Spot USDT instrument; `coinm_perpetual` selects only those whose coin has a trading Binance COIN-M perpetual contract; `favorites` selects the current user's favorites: an analysis has a row for every favorite, active or not, in the favorites order, with the favorites table, and an instrument list only the active ones.
 type MarketUniverse string
 
 // PriceAlert defines model for PriceAlert.
@@ -1477,6 +1564,16 @@ type ReadinessResponse struct {
 
 // ReadinessResponseStatus defines model for ReadinessResponse.Status.
 type ReadinessResponseStatus string
+
+// SavedBacktestedStrategy A saved strategy or signal, enabled or not.
+type SavedBacktestedStrategy struct {
+	// Id UUIDv7 of a strategy or signal.
+	Id   StrategyID                  `json:"id"`
+	Kind SavedBacktestedStrategyKind `json:"kind"`
+}
+
+// SavedBacktestedStrategyKind defines model for SavedBacktestedStrategy.Kind.
+type SavedBacktestedStrategyKind string
 
 // ScannerIndicator defines model for ScannerIndicator.
 type ScannerIndicator struct {
@@ -1577,84 +1674,31 @@ type SignalWindow int
 
 // Strategy defines model for Strategy.
 type Strategy struct {
-	// CoinSource Which coins the strategy evaluates: `selected`, the coins in `coins`;
-	// or, a signal's only, `favorites`, the administrator's active favorites
-	// whenever they change, or `all`, every active coin.
-	CoinSource StrategyCoinSource `json:"coin_source"`
-
-	// Coins The coins the enabled strategy or signal evaluates, among all coins,
-	// ascending, when `coin_source` is `selected`, which needs at least
-	// one; none otherwise. Every coin must be active: a delisted coin,
-	// chosen or read through `of`, disables the strategy until it is
-	// replaced or removed.
-	Coins StrategyCoins `json:"coins"`
-
-	// Direction How a strategy trades, long or short, or the price move a signal
-	// expects after its entry signals: none in particular (simple), up,
-	// down, or sideways. A simple signal has no target ratio or window. A short
-	// strategy always has a take profit and a stop loss. Fixed at creation:
-	// an update that changes it is refused.
-	Direction Direction `json:"direction"`
-	Enabled   bool      `json:"enabled"`
-
-	// ExitExpression Exit rule, a CEL expression like the entry rule that may also read the
-	// position variables, such as `pnl >= 5 || bars_held >= 24`; empty
-	// without an exit rule. A strategy without an exit rule, take profit,
-	// or stop loss never sells and buys at every entry signal.
-	ExitExpression StrategyExitExpression `json:"exit_expression"`
-
-	// Expression Entry rule, a CEL expression such as `rsi("1d") > 50 && CrossesAbove(ema("1h", 20), ema("1h", 50))`.
-	Expression string `json:"expression"`
+	// Coins The coins a strategy or signal evaluates and, a signal's only, the market caps it announces.
+	Coins   StrategyCoins `json:"coins"`
+	Enabled bool          `json:"enabled"`
 
 	// Id UUIDv7 of a strategy or signal.
 	Id StrategyID `json:"id"`
-
-	// MaxMarketCapUsd A signal's only: a bound, in USD and inclusive, of the current market
-	// caps of the coins the enabled signal announces; null leaves that side
-	// open, and a trading strategy has null for both. With either bound,
-	// coins of an unknown market cap signal nothing. Backtests ignore it.
-	// The minimum must not exceed the maximum.
-	MaxMarketCapUsd *StrategyMarketCapBound `json:"max_market_cap_usd"`
 
 	// Message Text that Telegram alerts show under each title, which names the
 	// strategy, its interval, and the buy, sell, or signal, above the line
 	// of each coin; empty shows none.
 	Message StrategyMessage `json:"message"`
-
-	// MinMarketCapUsd A signal's only: a bound, in USD and inclusive, of the current market
-	// caps of the coins the enabled signal announces; null leaves that side
-	// open, and a trading strategy has null for both. With either bound,
-	// coins of an unknown market cap signal nothing. Backtests ignore it.
-	// The minimum must not exceed the maximum.
-	MinMarketCapUsd *StrategyMarketCapBound `json:"min_market_cap_usd"`
-	Name            string                  `json:"name"`
+	Name    string          `json:"name"`
 
 	// Problem Why a stored rule no longer compiles; present only when valid is false.
 	Problem *string `json:"problem,omitempty"`
 
-	// Signal Whether the strategy is a signal, which buys nothing and only
-	// announces its entry signals, so its exit rule, take profit, and stop
-	// loss are empty. Fixed at creation:
-	// an update that changes it is refused.
-	Signal StrategySignal `json:"signal"`
-
-	// StopLossExpression Stop loss price, a CEL price expression like the take profit, such as
-	// `close("1h") - 2 * atr("1h")`. A signal whose stop loss is not between 0
-	// and its close buys nothing. Empty without a stop loss.
-	StopLossExpression StrategyStopLossExpression `json:"stop_loss_expression"`
-
-	// TakeProfitExpression Take profit price, a CEL price expression evaluated at the close of
-	// the entry signal and fixed for the trade, such as `close("1h") * 1.05` or
-	// `bbands_upperband("1h", 20)`: arithmetic and `Abs`, `Mod`, `Min`,
-	// `Max`, `Prev`, `Percentile`, and `Of` over calls and numbers,
-	// reading the evaluated coin. A signal whose take profit is not above
-	// its close buys nothing. Empty without a take profit.
-	TakeProfitExpression StrategyTakeProfitExpression `json:"take_profit_expression"`
-	TargetRatio          *SignalTargetRatio           `json:"target_ratio"`
+	// Rules How a strategy trades or what a signal announces, all that a backtest
+	// reads. A signal buys nothing and only announces its entry signals, so
+	// its exit rule, take profit, and stop loss are empty. `signal` and
+	// `direction` are fixed at creation: an update that changes them is
+	// refused.
+	Rules StrategyRules `json:"rules"`
 
 	// Valid False when a stored rule no longer compiles; such a strategy is not evaluated.
-	Valid  bool          `json:"valid"`
-	Window *SignalWindow `json:"window"`
+	Valid bool `json:"valid"`
 }
 
 // StrategyBacktest Returns, drawdowns, moves, and fees are fractions, such as 0.012 for 1.2%.
@@ -1668,8 +1712,7 @@ type StrategyBacktest struct {
 	// Direction How a strategy trades, long or short, or the price move a signal
 	// expects after its entry signals: none in particular (simple), up,
 	// down, or sideways. A simple signal has no target ratio or window. A short
-	// strategy always has a take profit and a stop loss. Fixed at creation:
-	// an update that changes it is refused.
+	// strategy always has a take profit and a stop loss.
 	Direction Direction `json:"direction"`
 
 	// DurationMs Server execution time in milliseconds, including service validation, database reads, calculations, requested chart snapshots, and response preparation. Excludes authentication, HTTP request validation, JSON serialization, and network transfer.
@@ -1705,55 +1748,22 @@ type StrategyBacktest struct {
 	Trades []BacktestTrade `json:"trades"`
 }
 
-// StrategyBacktestInput The rules and trading settings of an unsaved strategy or signal, as
-// in `StrategyInput`, and the backtested coin and period.
+// StrategyBacktestInput The backtested strategy, the backtested coin, and the period.
 type StrategyBacktestInput struct {
 	// Chart Include an immutable chart snapshot of the entire evaluated period.
 	Chart *bool `json:"chart,omitempty"`
 
-	// Direction How a strategy trades, long or short, or the price move a signal
-	// expects after its entry signals: none in particular (simple), up,
-	// down, or sideways. A simple signal has no target ratio or window. A short
-	// strategy always has a take profit and a stop loss. Fixed at creation:
-	// an update that changes it is refused.
-	Direction Direction `json:"direction"`
-
-	// ExitExpression Exit rule, a CEL expression like the entry rule that may also read the
-	// position variables, such as `pnl >= 5 || bars_held >= 24`; empty
-	// without an exit rule. A strategy without an exit rule, take profit,
-	// or stop loss never sells and buys at every entry signal.
-	ExitExpression StrategyExitExpression `json:"exit_expression"`
-	Expression     string                 `json:"expression"`
-
 	// From Earliest open time of an evaluated candle; the start of the stored history when absent.
 	From *time.Time `json:"from,omitempty"`
 
-	// Signal Whether the strategy is a signal, which buys nothing and only
-	// announces its entry signals, so its exit rule, take profit, and stop
-	// loss are empty. Fixed at creation:
-	// an update that changes it is refused.
-	Signal StrategySignal `json:"signal"`
-
-	// StopLossExpression Stop loss price, a CEL price expression like the take profit, such as
-	// `close("1h") - 2 * atr("1h")`. A signal whose stop loss is not between 0
-	// and its close buys nothing. Empty without a stop loss.
-	StopLossExpression StrategyStopLossExpression `json:"stop_loss_expression"`
+	// Strategy A saved strategy, by its id, or the rules of an unsaved one.
+	Strategy BacktestedStrategy `json:"strategy"`
 
 	// Symbol Market symbol, such as `BTCUSDT`.
 	Symbol SymbolName `json:"symbol"`
 
-	// TakeProfitExpression Take profit price, a CEL price expression evaluated at the close of
-	// the entry signal and fixed for the trade, such as `close("1h") * 1.05` or
-	// `bbands_upperband("1h", 20)`: arithmetic and `Abs`, `Mod`, `Min`,
-	// `Max`, `Prev`, `Percentile`, and `Of` over calls and numbers,
-	// reading the evaluated coin. A signal whose take profit is not above
-	// its close buys nothing. Empty without a take profit.
-	TakeProfitExpression StrategyTakeProfitExpression `json:"take_profit_expression"`
-	TargetRatio          *SignalTargetRatio           `json:"target_ratio"`
-
 	// To Latest open time of an evaluated candle, not before `from`; the end of the stored history when absent.
-	To     *time.Time    `json:"to,omitempty"`
-	Window *SignalWindow `json:"window"`
+	To *time.Time `json:"to,omitempty"`
 }
 
 // StrategyCatalog defines model for StrategyCatalog.
@@ -1762,7 +1772,7 @@ type StrategyCatalog struct {
 	CandleFields []string `json:"candle_fields"`
 
 	// IndicatorTypes Every indicator type calls may name, configured or not, ordered by type.
-	IndicatorTypes []StrategyIndicatorType `json:"indicator_types"`
+	IndicatorTypes []IndicatorType `json:"indicator_types"`
 
 	// Indicators The configured indicators, in display order.
 	Indicators []StrategyIndicatorCall `json:"indicators"`
@@ -1772,28 +1782,44 @@ type StrategyCatalog struct {
 	PositionVariables []StrategyPositionVariable `json:"position_variables"`
 }
 
-// StrategyCoinSource Which coins the strategy evaluates: `selected`, the coins in `coins`;
+// StrategyCoinSource Which coins the strategy evaluates: `selected`, the coins in `symbols`;
 // or, a signal's only, `favorites`, the administrator's active favorites
 // whenever they change, or `all`, every active coin.
 type StrategyCoinSource string
 
-// StrategyCoins The coins the enabled strategy or signal evaluates, among all coins,
-// ascending, when `coin_source` is `selected`, which needs at least
-// one; none otherwise. Every coin must be active: a delisted coin,
-// chosen or read through `of`, disables the strategy until it is
-// replaced or removed.
-type StrategyCoins = []SymbolName
+// StrategyCoins The coins a strategy or signal evaluates and, a signal's only, the market caps it announces.
+type StrategyCoins struct {
+	// MaxMarketCapUsd A signal's only: a bound, in USD and inclusive, of the current market
+	// caps of the coins the enabled signal announces; null leaves that side
+	// open, and a trading strategy has null for both. With either bound,
+	// coins of an unknown market cap signal nothing. Backtests ignore it.
+	// The minimum must not exceed the maximum.
+	MaxMarketCapUsd *StrategyMarketCapBound `json:"max_market_cap_usd"`
+
+	// MinMarketCapUsd A signal's only: a bound, in USD and inclusive, of the current market
+	// caps of the coins the enabled signal announces; null leaves that side
+	// open, and a trading strategy has null for both. With either bound,
+	// coins of an unknown market cap signal nothing. Backtests ignore it.
+	// The minimum must not exceed the maximum.
+	MinMarketCapUsd *StrategyMarketCapBound `json:"min_market_cap_usd"`
+
+	// Source Which coins the strategy evaluates: `selected`, the coins in `symbols`;
+	// or, a signal's only, `favorites`, the administrator's active favorites
+	// whenever they change, or `all`, every active coin.
+	Source StrategyCoinSource `json:"source"`
+
+	// Symbols The coins the enabled strategy or signal evaluates, among all coins,
+	// ascending, when `source` is `selected`, which needs at least
+	// one; none otherwise. Every coin must be active: a delisted coin,
+	// chosen or read through `of`, disables the strategy until it is
+	// replaced or removed.
+	Symbols []SymbolName `json:"symbols"`
+}
 
 // StrategyEnabled defines model for StrategyEnabled.
 type StrategyEnabled struct {
 	Enabled bool `json:"enabled"`
 }
-
-// StrategyExitExpression Exit rule, a CEL expression like the entry rule that may also read the
-// position variables, such as `pnl >= 5 || bars_held >= 24`; empty
-// without an exit rule. A strategy without an exit rule, take profit,
-// or stop loss never sells and buys at every entry signal.
-type StrategyExitExpression = string
 
 // StrategyID UUIDv7 of a strategy or signal.
 type StrategyID = openapi_types.UUID
@@ -1816,124 +1842,42 @@ type StrategyIndicatorCall struct {
 	Type string `json:"type"`
 }
 
-// StrategyIndicatorChoice defines model for StrategyIndicatorChoice.
-type StrategyIndicatorChoice struct {
-	// Name The name calls write for the choice, such as `volume`; absent for a choice calls write as a number, or, of a source, only by leaving the source out.
-	Name  *string `json:"name,omitempty"`
-	Title string  `json:"title"`
-	Value int     `json:"value"`
-}
-
-// StrategyIndicatorOutput defines model for StrategyIndicatorOutput.
-type StrategyIndicatorOutput struct {
-	Name string `json:"name"`
-
-	// Sparse The output is empty on some candles, such as `pivot_high`; it cannot be the source of another indicator.
-	Sparse bool `json:"sparse"`
-}
-
-// StrategyIndicatorParameter defines model for StrategyIndicatorParameter.
-type StrategyIndicatorParameter struct {
-	Choices *[]StrategyIndicatorChoice `json:"choices,omitempty"`
-	Default float64                    `json:"default"`
-	Key     string                     `json:"key"`
-
-	// Kind `choice` is an integer limited to `choices`; `source` is the
-	// series the indicator reads: one of `choices`, written by its
-	// name, or a call of another indicator on the same period;
-	// `minimum` and `maximum` bound the other kinds.
-	Kind    StrategyIndicatorParameterKind `json:"kind"`
-	Maximum *float64                       `json:"maximum,omitempty"`
-	Minimum *float64                       `json:"minimum,omitempty"`
-	Title   string                         `json:"title"`
-}
-
-// StrategyIndicatorParameterKind `choice` is an integer limited to `choices`; `source` is the
-// series the indicator reads: one of `choices`, written by its
-// name, or a call of another indicator on the same period;
-// `minimum` and `maximum` bound the other kinds.
-type StrategyIndicatorParameterKind string
-
-// StrategyIndicatorType An indicator type as calls name it, such as `bbands`, with the parameters that follow the period.
-type StrategyIndicatorType struct {
-	// Outputs The outputs; calls of an indicator with several add the output to the type, such as `bbands_upperband`, calls of one with a single output are named by the type alone.
-	Outputs []StrategyIndicatorOutput `json:"outputs"`
-
-	// Parameters The parameters in the order calls write them after the period.
-	Parameters []StrategyIndicatorParameter `json:"parameters"`
-	Title      string                       `json:"title"`
-	Type       string                       `json:"type"`
-}
-
 // StrategyInput defines model for StrategyInput.
 type StrategyInput struct {
-	// CoinSource Which coins the strategy evaluates: `selected`, the coins in `coins`;
-	// or, a signal's only, `favorites`, the administrator's active favorites
-	// whenever they change, or `all`, every active coin.
-	CoinSource StrategyCoinSource `json:"coin_source"`
-
-	// Coins The coins the enabled strategy or signal evaluates, among all coins,
-	// ascending, when `coin_source` is `selected`, which needs at least
-	// one; none otherwise. Every coin must be active: a delisted coin,
-	// chosen or read through `of`, disables the strategy until it is
-	// replaced or removed.
-	Coins StrategyCoins `json:"coins"`
-
-	// Direction How a strategy trades, long or short, or the price move a signal
-	// expects after its entry signals: none in particular (simple), up,
-	// down, or sideways. A simple signal has no target ratio or window. A short
-	// strategy always has a take profit and a stop loss. Fixed at creation:
-	// an update that changes it is refused.
-	Direction Direction `json:"direction"`
-	Enabled   bool      `json:"enabled"`
-
-	// ExitExpression Exit rule, a CEL expression like the entry rule that may also read the
-	// position variables, such as `pnl >= 5 || bars_held >= 24`; empty
-	// without an exit rule. A strategy without an exit rule, take profit,
-	// or stop loss never sells and buys at every entry signal.
-	ExitExpression StrategyExitExpression `json:"exit_expression"`
-	Expression     string                 `json:"expression"`
-
-	// MaxMarketCapUsd A signal's only: a bound, in USD and inclusive, of the current market
-	// caps of the coins the enabled signal announces; null leaves that side
-	// open, and a trading strategy has null for both. With either bound,
-	// coins of an unknown market cap signal nothing. Backtests ignore it.
-	// The minimum must not exceed the maximum.
-	MaxMarketCapUsd *StrategyMarketCapBound `json:"max_market_cap_usd"`
+	// Coins The coins a strategy or signal evaluates and, a signal's only, the market caps it announces.
+	Coins   StrategyCoins `json:"coins"`
+	Enabled bool          `json:"enabled"`
 
 	// Message Text that Telegram alerts show under each title, which names the
 	// strategy, its interval, and the buy, sell, or signal, above the line
 	// of each coin; empty shows none.
 	Message StrategyMessage `json:"message"`
+	Name    StrategyName    `json:"name"`
 
-	// MinMarketCapUsd A signal's only: a bound, in USD and inclusive, of the current market
-	// caps of the coins the enabled signal announces; null leaves that side
-	// open, and a trading strategy has null for both. With either bound,
-	// coins of an unknown market cap signal nothing. Backtests ignore it.
-	// The minimum must not exceed the maximum.
-	MinMarketCapUsd *StrategyMarketCapBound `json:"min_market_cap_usd"`
-	Name            string                  `json:"name"`
+	// Rules How a strategy trades or what a signal announces, all that a backtest
+	// reads. A signal buys nothing and only announces its entry signals, so
+	// its exit rule, take profit, and stop loss are empty. `signal` and
+	// `direction` are fixed at creation: an update that changes them is
+	// refused.
+	Rules StrategyRules `json:"rules"`
+}
 
-	// Signal Whether the strategy is a signal, which buys nothing and only
-	// announces its entry signals, so its exit rule, take profit, and stop
-	// loss are empty. Fixed at creation:
-	// an update that changes it is refused.
-	Signal StrategySignal `json:"signal"`
+// StrategyInvalidError defines model for StrategyInvalidError.
+type StrategyInvalidError struct {
+	Code StrategyInvalidErrorCode `json:"code"`
 
-	// StopLossExpression Stop loss price, a CEL price expression like the take profit, such as
-	// `close("1h") - 2 * atr("1h")`. A signal whose stop loss is not between 0
-	// and its close buys nothing. Empty without a stop loss.
-	StopLossExpression StrategyStopLossExpression `json:"stop_loss_expression"`
+	// Details Present when the strategy itself is invalid; absent when the request does not match the contract.
+	Details *StrategyProblems `json:"details,omitempty"`
+	Message string            `json:"message"`
+}
 
-	// TakeProfitExpression Take profit price, a CEL price expression evaluated at the close of
-	// the entry signal and fixed for the trade, such as `close("1h") * 1.05` or
-	// `bbands_upperband("1h", 20)`: arithmetic and `Abs`, `Mod`, `Min`,
-	// `Max`, `Prev`, `Percentile`, and `Of` over calls and numbers,
-	// reading the evaluated coin. A signal whose take profit is not above
-	// its close buys nothing. Empty without a take profit.
-	TakeProfitExpression StrategyTakeProfitExpression `json:"take_profit_expression"`
-	TargetRatio          *SignalTargetRatio           `json:"target_ratio"`
-	Window               *SignalWindow                `json:"window"`
+// StrategyInvalidErrorCode defines model for StrategyInvalidError.Code.
+type StrategyInvalidErrorCode string
+
+// StrategyInvalidResponse An `ErrorResponse` whose details list the problems of an invalid strategy.
+type StrategyInvalidResponse struct {
+	Error     StrategyInvalidError `json:"error"`
+	RequestId string               `json:"request_id"`
 }
 
 // StrategyList defines model for StrategyList.
@@ -1953,6 +1897,9 @@ type StrategyMarketCapBound = float64
 // of each coin; empty shows none.
 type StrategyMessage = string
 
+// StrategyName defines model for StrategyName.
+type StrategyName = string
+
 // StrategyPositionVariable A variable of the open trade, which only exit rules read and only at
 // the latest candle: `entry_price`, the average price of its buys;
 // `pnl`, its return at the close before fees in percent, such as 5 for
@@ -1964,94 +1911,48 @@ type StrategyPositionVariable struct {
 	Name  string `json:"name"`
 }
 
-// StrategySignal Whether the strategy is a signal, which buys nothing and only
-// announces its entry signals, so its exit rule, take profit, and stop
-// loss are empty. Fixed at creation:
-// an update that changes it is refused.
-type StrategySignal = bool
+// StrategyProblems Present when the strategy itself is invalid; absent when the request does not match the contract.
+type StrategyProblems struct {
+	Problems []string `json:"problems"`
+}
 
-// StrategyStopLossExpression Stop loss price, a CEL price expression like the take profit, such as
-// `close("1h") - 2 * atr("1h")`. A signal whose stop loss is not between 0
-// and its close buys nothing. Empty without a stop loss.
-type StrategyStopLossExpression = string
-
-// StrategyTakeProfitExpression Take profit price, a CEL price expression evaluated at the close of
-// the entry signal and fixed for the trade, such as `close("1h") * 1.05` or
-// `bbands_upperband("1h", 20)`: arithmetic and `Abs`, `Mod`, `Min`,
-// `Max`, `Prev`, `Percentile`, and `Of` over calls and numbers,
-// reading the evaluated coin. A signal whose take profit is not above
-// its close buys nothing. Empty without a take profit.
-type StrategyTakeProfitExpression = string
-
-// StrategyUpdate defines model for StrategyUpdate.
-type StrategyUpdate struct {
-	// CoinSource Which coins the strategy evaluates: `selected`, the coins in `coins`;
-	// or, a signal's only, `favorites`, the administrator's active favorites
-	// whenever they change, or `all`, every active coin.
-	CoinSource StrategyCoinSource `json:"coin_source"`
-
-	// Coins The coins the enabled strategy or signal evaluates, among all coins,
-	// ascending, when `coin_source` is `selected`, which needs at least
-	// one; none otherwise. Every coin must be active: a delisted coin,
-	// chosen or read through `of`, disables the strategy until it is
-	// replaced or removed.
-	Coins StrategyCoins `json:"coins"`
-
+// StrategyRules How a strategy trades or what a signal announces, all that a backtest
+// reads. A signal buys nothing and only announces its entry signals, so
+// its exit rule, take profit, and stop loss are empty. `signal` and
+// `direction` are fixed at creation: an update that changes them is
+// refused.
+type StrategyRules struct {
 	// Direction How a strategy trades, long or short, or the price move a signal
 	// expects after its entry signals: none in particular (simple), up,
 	// down, or sideways. A simple signal has no target ratio or window. A short
-	// strategy always has a take profit and a stop loss. Fixed at creation:
-	// an update that changes it is refused.
+	// strategy always has a take profit and a stop loss.
 	Direction Direction `json:"direction"`
 
 	// ExitExpression Exit rule, a CEL expression like the entry rule that may also read the
 	// position variables, such as `pnl >= 5 || bars_held >= 24`; empty
 	// without an exit rule. A strategy without an exit rule, take profit,
 	// or stop loss never sells and buys at every entry signal.
-	ExitExpression StrategyExitExpression `json:"exit_expression"`
+	ExitExpression string `json:"exit_expression"`
 
-	// Expression CEL over indicator and candle field calls, such as `rsi("1h")`,
-	// `bbands_upperband("1d", 20, 2.5)`, or `close("1h")`: comparisons
-	// (`>`, `>=`, `<`, `<=`) of arithmetic (`+`, `-`, `*`, `/`,
-	// parentheses) over calls and numbers, combined with `&&`, `||`,
-	// and `!`. `Prev(x)` and `Prev(x, n)` read `x` one or `n` closed
-	// candles earlier; `Percentile(x, n, p)` is the nearest-rank
+	// Expression Entry rule, CEL over indicator and candle field calls, such as
+	// `rsi("1d") > 50 && CrossesAbove(ema("1h", 20), ema("1h", 50))`:
+	// comparisons (`>`, `>=`, `<`, `<=`) of arithmetic (`+`, `-`, `*`,
+	// `/`, parentheses) over calls and numbers, combined with `&&`,
+	// `||`, and `!`. `Prev(x)` and `Prev(x, n)` read `x` one or `n`
+	// closed candles earlier; `Percentile(x, n, p)` is the nearest-rank
 	// `p`-th percentile of `x` over the `n` closed candles before the
 	// latest one; `CrossesAbove(a, b)` and `CrossesBelow(a, b)` compare
 	// with the previous candle. `Of("BTCUSDT", x)` reads `x` of another
 	// coin, which must be active.
 	Expression string `json:"expression"`
 
-	// MaxMarketCapUsd A signal's only: a bound, in USD and inclusive, of the current market
-	// caps of the coins the enabled signal announces; null leaves that side
-	// open, and a trading strategy has null for both. With either bound,
-	// coins of an unknown market cap signal nothing. Backtests ignore it.
-	// The minimum must not exceed the maximum.
-	MaxMarketCapUsd *StrategyMarketCapBound `json:"max_market_cap_usd"`
-
-	// Message Text that Telegram alerts show under each title, which names the
-	// strategy, its interval, and the buy, sell, or signal, above the line
-	// of each coin; empty shows none.
-	Message StrategyMessage `json:"message"`
-
-	// MinMarketCapUsd A signal's only: a bound, in USD and inclusive, of the current market
-	// caps of the coins the enabled signal announces; null leaves that side
-	// open, and a trading strategy has null for both. With either bound,
-	// coins of an unknown market cap signal nothing. Backtests ignore it.
-	// The minimum must not exceed the maximum.
-	MinMarketCapUsd *StrategyMarketCapBound `json:"min_market_cap_usd"`
-	Name            string                  `json:"name"`
-
-	// Signal Whether the strategy is a signal, which buys nothing and only
-	// announces its entry signals, so its exit rule, take profit, and stop
-	// loss are empty. Fixed at creation:
-	// an update that changes it is refused.
-	Signal StrategySignal `json:"signal"`
+	// Signal Whether the strategy is a signal.
+	Signal bool `json:"signal"`
 
 	// StopLossExpression Stop loss price, a CEL price expression like the take profit, such as
 	// `close("1h") - 2 * atr("1h")`. A signal whose stop loss is not between 0
 	// and its close buys nothing. Empty without a stop loss.
-	StopLossExpression StrategyStopLossExpression `json:"stop_loss_expression"`
+	StopLossExpression string `json:"stop_loss_expression"`
 
 	// TakeProfitExpression Take profit price, a CEL price expression evaluated at the close of
 	// the entry signal and fixed for the trade, such as `close("1h") * 1.05` or
@@ -2059,9 +1960,28 @@ type StrategyUpdate struct {
 	// `Max`, `Prev`, `Percentile`, and `Of` over calls and numbers,
 	// reading the evaluated coin. A signal whose take profit is not above
 	// its close buys nothing. Empty without a take profit.
-	TakeProfitExpression StrategyTakeProfitExpression `json:"take_profit_expression"`
-	TargetRatio          *SignalTargetRatio           `json:"target_ratio"`
-	Window               *SignalWindow                `json:"window"`
+	TakeProfitExpression string             `json:"take_profit_expression"`
+	TargetRatio          *SignalTargetRatio `json:"target_ratio"`
+	Window               *SignalWindow      `json:"window"`
+}
+
+// StrategyUpdate defines model for StrategyUpdate.
+type StrategyUpdate struct {
+	// Coins The coins a strategy or signal evaluates and, a signal's only, the market caps it announces.
+	Coins StrategyCoins `json:"coins"`
+
+	// Message Text that Telegram alerts show under each title, which names the
+	// strategy, its interval, and the buy, sell, or signal, above the line
+	// of each coin; empty shows none.
+	Message StrategyMessage `json:"message"`
+	Name    StrategyName    `json:"name"`
+
+	// Rules How a strategy trades or what a signal announces, all that a backtest
+	// reads. A signal buys nothing and only announces its entry signals, so
+	// its exit rule, take profit, and stop loss are empty. `signal` and
+	// `direction` are fixed at creation: an update that changes them is
+	// refused.
+	Rules StrategyRules `json:"rules"`
 }
 
 // StrategyValidation defines model for StrategyValidation.
@@ -2124,7 +2044,7 @@ type TableColumnKind string
 type TableRow struct {
 	// Cells Cells keyed by column id. Columns of kind `text` and `favorite` have no cell.
 	Cells   map[string]TableCell `json:"cells"`
-	Markets []MarketUniverse     `json:"markets"`
+	Markets []Market             `json:"markets"`
 	Symbol  string               `json:"symbol"`
 }
 
@@ -2177,9 +2097,6 @@ type Warning struct {
 
 // AlertID defines model for AlertID.
 type AlertID = int64
-
-// RequestID defines model for RequestID.
-type RequestID = string
 
 // ScannerIndicatorID defines model for ScannerIndicatorID.
 type ScannerIndicatorID = int64
@@ -2241,6 +2158,9 @@ type SessionRequired = ErrorResponse
 // StrategyConflict defines model for StrategyConflict.
 type StrategyConflict = ErrorResponse
 
+// StrategyInvalid An `ErrorResponse` whose details list the problems of an invalid strategy.
+type StrategyInvalid = StrategyInvalidResponse
+
 // StrategyNotFound defines model for StrategyNotFound.
 type StrategyNotFound = ErrorResponse
 
@@ -2255,45 +2175,6 @@ type UnprocessableAnalysis = ErrorResponse
 
 // UserNotFound defines model for UserNotFound.
 type UserNotFound = ErrorResponse
-
-// BacktestStrategyParams defines parameters for BacktestStrategy.
-type BacktestStrategyParams struct {
-	// Symbol Market symbol of the replayed coin.
-	Symbol SymbolName `form:"symbol" json:"symbol"`
-
-	// From Earliest open time of an evaluated candle; the start of the stored history when absent.
-	From *time.Time `form:"from,omitempty" json:"from,omitempty"`
-
-	// To Latest open time of an evaluated candle, not before `from`; the end of the stored history when absent.
-	To *time.Time `form:"to,omitempty" json:"to,omitempty"`
-
-	// Chart Include an immutable chart snapshot of the entire evaluated period.
-	Chart *bool `form:"chart,omitempty" json:"chart,omitempty"`
-}
-
-// AnalyzeInstrumentParams defines parameters for AnalyzeInstrument.
-type AnalyzeInstrumentParams struct {
-	// XRequestID Optional caller-provided correlation ID. Unsafe values are replaced.
-	XRequestID *RequestID `json:"X-Request-ID,omitempty"`
-}
-
-// AnalyzeMarketParams defines parameters for AnalyzeMarket.
-type AnalyzeMarketParams struct {
-	// XRequestID Optional caller-provided correlation ID. Unsafe values are replaced.
-	XRequestID *RequestID `json:"X-Request-ID,omitempty"`
-}
-
-// DeleteSessionParams defines parameters for DeleteSession.
-type DeleteSessionParams struct {
-	// XRequestID Optional caller-provided correlation ID. Unsafe values are replaced.
-	XRequestID *RequestID `json:"X-Request-ID,omitempty"`
-}
-
-// CreateSessionParams defines parameters for CreateSession.
-type CreateSessionParams struct {
-	// XRequestID Optional caller-provided correlation ID. Unsafe values are replaced.
-	XRequestID *RequestID `json:"X-Request-ID,omitempty"`
-}
 
 // ListChartIndicatorsParams defines parameters for ListChartIndicators.
 type ListChartIndicatorsParams struct {
@@ -2320,27 +2201,6 @@ type ListInstrumentCandlesParams struct {
 
 	// Limit Maximum number of candles to return.
 	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
-
-	// XRequestID Optional caller-provided correlation ID. Unsafe values are replaced.
-	XRequestID *RequestID `json:"X-Request-ID,omitempty"`
-}
-
-// GetInstrumentGridLimitsParams defines parameters for GetInstrumentGridLimits.
-type GetInstrumentGridLimitsParams struct {
-	// XRequestID Optional caller-provided correlation ID. Unsafe values are replaced.
-	XRequestID *RequestID `json:"X-Request-ID,omitempty"`
-}
-
-// GetLivenessParams defines parameters for GetLiveness.
-type GetLivenessParams struct {
-	// XRequestID Optional caller-provided correlation ID. Unsafe values are replaced.
-	XRequestID *RequestID `json:"X-Request-ID,omitempty"`
-}
-
-// GetReadinessParams defines parameters for GetReadiness.
-type GetReadinessParams struct {
-	// XRequestID Optional caller-provided correlation ID. Unsafe values are replaced.
-	XRequestID *RequestID `json:"X-Request-ID,omitempty"`
 }
 
 // ReorderScannerIndicatorsJSONRequestBody defines body for ReorderScannerIndicators for application/json ContentType.
@@ -2361,8 +2221,8 @@ type SetStrategyEnabledJSONRequestBody = StrategyEnabled
 // UpdateStrategyJSONRequestBody defines body for UpdateStrategy for application/json ContentType.
 type UpdateStrategyJSONRequestBody = StrategyUpdate
 
-// BacktestStrategyDraftJSONRequestBody defines body for BacktestStrategyDraft for application/json ContentType.
-type BacktestStrategyDraftJSONRequestBody = StrategyBacktestInput
+// BacktestStrategyJSONRequestBody defines body for BacktestStrategy for application/json ContentType.
+type BacktestStrategyJSONRequestBody = StrategyBacktestInput
 
 // ValidateStrategyJSONRequestBody defines body for ValidateStrategy for application/json ContentType.
 type ValidateStrategyJSONRequestBody = StrategyValidationInput
@@ -2379,11 +2239,109 @@ type AnalyzeInstrumentJSONRequestBody = InstrumentAnalysisRequest
 // AnalyzeMarketJSONRequestBody defines body for AnalyzeMarket for application/json ContentType.
 type AnalyzeMarketJSONRequestBody = MarketAnalysisRequest
 
-// AnalyzeFavoritesJSONRequestBody defines body for AnalyzeFavorites for application/json ContentType.
-type AnalyzeFavoritesJSONRequestBody = MarketAnalysisRequest
-
 // CreatePriceAlertJSONRequestBody defines body for CreatePriceAlert for application/json ContentType.
 type CreatePriceAlertJSONRequestBody = PriceAlertInput
+
+// AsSavedBacktestedStrategy returns the union data inside the BacktestedStrategy as a SavedBacktestedStrategy
+func (t BacktestedStrategy) AsSavedBacktestedStrategy() (SavedBacktestedStrategy, error) {
+	var body SavedBacktestedStrategy
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromSavedBacktestedStrategy overwrites any union data inside the BacktestedStrategy as the provided SavedBacktestedStrategy
+func (t *BacktestedStrategy) FromSavedBacktestedStrategy(v SavedBacktestedStrategy) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"kind":"saved"}`))
+	t.union = b
+	return err
+}
+
+// MergeSavedBacktestedStrategy performs a merge with any union data inside the BacktestedStrategy, using the provided SavedBacktestedStrategy
+func (t *BacktestedStrategy) MergeSavedBacktestedStrategy(v SavedBacktestedStrategy) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"kind":"saved"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsDraftBacktestedStrategy returns the union data inside the BacktestedStrategy as a DraftBacktestedStrategy
+func (t BacktestedStrategy) AsDraftBacktestedStrategy() (DraftBacktestedStrategy, error) {
+	var body DraftBacktestedStrategy
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromDraftBacktestedStrategy overwrites any union data inside the BacktestedStrategy as the provided DraftBacktestedStrategy
+func (t *BacktestedStrategy) FromDraftBacktestedStrategy(v DraftBacktestedStrategy) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"kind":"draft"}`))
+	t.union = b
+	return err
+}
+
+// MergeDraftBacktestedStrategy performs a merge with any union data inside the BacktestedStrategy, using the provided DraftBacktestedStrategy
+func (t *BacktestedStrategy) MergeDraftBacktestedStrategy(v DraftBacktestedStrategy) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"kind":"draft"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t BacktestedStrategy) Discriminator() (string, error) {
+	var discriminator struct {
+		Discriminator string `json:"kind"`
+	}
+	err := json.Unmarshal(t.union, &discriminator)
+	return discriminator.Discriminator, err
+}
+
+func (t BacktestedStrategy) ValueByDiscriminator() (interface{}, error) {
+	discriminator, err := t.Discriminator()
+	if err != nil {
+		return nil, err
+	}
+	switch discriminator {
+	case "draft":
+		return t.AsDraftBacktestedStrategy()
+	case "saved":
+		return t.AsSavedBacktestedStrategy()
+	default:
+		return nil, errors.New("unknown discriminator value: " + discriminator)
+	}
+}
+
+func (t BacktestedStrategy) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *BacktestedStrategy) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
 
 // AsChartLineShape returns the union data inside the ChartShape as a ChartLineShape
 func (t ChartShape) AsChartLineShape() (ChartLineShape, error) {
@@ -2758,6 +2716,11 @@ type ClientInterface interface {
 	// Corresponds with DELETE /api/v1/admin/strategies/{strategy_id} (the `DeleteStrategy` operationId).
 	DeleteStrategy(ctx context.Context, strategyId StrategyID, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetStrategy Show a strategy
+	//
+	// Corresponds with GET /api/v1/admin/strategies/{strategy_id} (the `GetStrategy` operationId).
+	GetStrategy(ctx context.Context, strategyId StrategyID, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// SetStrategyEnabledWithBody Turn a strategy on or off
 	//
 	// Enabling starts the strategy afresh, without trades, and needs coins chosen, all active; disabling forgets its trades.
@@ -2794,9 +2757,11 @@ type ClientInterface interface {
 	// Corresponds with PUT /api/v1/admin/strategies/{strategy_id} (the `UpdateStrategy` operationId).
 	UpdateStrategy(ctx context.Context, strategyId StrategyID, body UpdateStrategyJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// BacktestStrategy Backtest a saved strategy on one coin
+	// BacktestStrategyWithBody Backtest a strategy on one coin
 	//
-	// Evaluates the saved strategy, enabled or not, at the close of every
+	// Backtests a saved strategy, enabled or not, or an unsaved one, whose
+	// rules are checked as a save checks them. It evaluates the strategy at
+	// the close of every
 	// stored candle of the finest interval its rules read, and replays its
 	// trades exactly as live signals trade, starting without a trade. Any active coin can be
 	// backtested; coins read through `of` must be in the administrator's
@@ -2819,43 +2784,54 @@ type ClientInterface interface {
 	// falls; funding, leverage, and liquidation are not modeled, and it has
 	// no baselines. A backtest that does not finish
 	// within its time limit fails with `backtest_too_heavy`. At most two
-	// backtests, saved or not, run at once; another fails at once with
-	// `backtest_busy`.
+	// backtests run at once; another fails at once with `backtest_busy`.
 	//
 	// A signal trades nothing: its backtest has no trades and no baselines,
 	// and `signal` lists its entry signals and how the price moved after
 	// them.
 	//
-	// Corresponds with GET /api/v1/admin/strategies/{strategy_id}/backtest (the `BacktestStrategy` operationId).
-	BacktestStrategy(ctx context.Context, strategyId StrategyID, params *BacktestStrategyParams, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// BacktestStrategyDraftWithBody Backtest an unsaved strategy on one coin
-	//
-	// Backtests the strategy or signal of the body without saving it,
-	// exactly as `GET /api/v1/admin/strategies/{strategy_id}/backtest`
-	// backtests a saved one with the same rules. The rules and trading
-	// settings are checked as a save checks them and fail with
-	// `invalid_argument`. At most two backtests, saved or not, run at once;
-	// another fails at once with `backtest_busy`.
-	//
 	// Takes any type of body and a specified content type.
 	//
-	// Corresponds with POST /api/v1/admin/strategy-backtests (the `BacktestStrategyDraft` operationId).
-	BacktestStrategyDraftWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// Corresponds with POST /api/v1/admin/strategy-backtests (the `BacktestStrategy` operationId).
+	BacktestStrategyWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// BacktestStrategyDraft Backtest an unsaved strategy on one coin
+	// BacktestStrategy Backtest a strategy on one coin
 	//
-	// Backtests the strategy or signal of the body without saving it,
-	// exactly as `GET /api/v1/admin/strategies/{strategy_id}/backtest`
-	// backtests a saved one with the same rules. The rules and trading
-	// settings are checked as a save checks them and fail with
-	// `invalid_argument`. At most two backtests, saved or not, run at once;
-	// another fails at once with `backtest_busy`.
+	// Backtests a saved strategy, enabled or not, or an unsaved one, whose
+	// rules are checked as a save checks them. It evaluates the strategy at
+	// the close of every
+	// stored candle of the finest interval its rules read, and replays its
+	// trades exactly as live signals trade, starting without a trade. Any active coin can be
+	// backtested; coins read through `of` must be in the administrator's
+	// favorites, otherwise their values are unknown. Only the stored closed
+	// history is replayed (up to 20,000 candles; the administrator loads
+	// deeper history with `POST /api/v1/admin/candle-history-loads`,
+	// backtests never load it); when older candles may be missing, candles
+	// before the full indicator warm-up are not evaluated.
+	//
+	// Every buy spends the same amount at the open of the candle after its
+	// signal. A take profit or stop loss sells every buy of the trade at its
+	// price on the candle that reaches it, or at that candle's open when it
+	// opens past it; an exit rule sells at the open of the candle after its
+	// signal. Both sides pay `fee`. A trade still open when the history
+	// ends is valued at the last close. `from` and `to` limit the evaluated
+	// candles by open time; older candles still warm the indicators up. Two baselines
+	// cover the same evaluated period of a long strategy: buying and
+	// holding, and buying the same amount at every candle (DCA). A short
+	// strategy sells at entry and buys back at exit, gaining as the price
+	// falls; funding, leverage, and liquidation are not modeled, and it has
+	// no baselines. A backtest that does not finish
+	// within its time limit fails with `backtest_too_heavy`. At most two
+	// backtests run at once; another fails at once with `backtest_busy`.
+	//
+	// A signal trades nothing: its backtest has no trades and no baselines,
+	// and `signal` lists its entry signals and how the price moved after
+	// them.
 	//
 	// Takes a body of the `application/json` content type.
 	//
-	// Corresponds with POST /api/v1/admin/strategy-backtests (the `BacktestStrategyDraft` operationId).
-	BacktestStrategyDraft(ctx context.Context, body BacktestStrategyDraftJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// Corresponds with POST /api/v1/admin/strategy-backtests (the `BacktestStrategy` operationId).
+	BacktestStrategy(ctx context.Context, body BacktestStrategyJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetStrategyCatalog List what strategy expressions read
 	//
@@ -2946,38 +2922,38 @@ type ClientInterface interface {
 	// Takes any type of body and a specified content type.
 	//
 	// Corresponds with POST /api/v1/analysis/instruments/{symbol} (the `AnalyzeInstrument` operationId).
-	AnalyzeInstrumentWithBody(ctx context.Context, symbol Symbol, params *AnalyzeInstrumentParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+	AnalyzeInstrumentWithBody(ctx context.Context, symbol Symbol, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// AnalyzeInstrument Analyze one active instrument
 	//
 	// Takes a body of the `application/json` content type.
 	//
 	// Corresponds with POST /api/v1/analysis/instruments/{symbol} (the `AnalyzeInstrument` operationId).
-	AnalyzeInstrument(ctx context.Context, symbol Symbol, params *AnalyzeInstrumentParams, body AnalyzeInstrumentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+	AnalyzeInstrument(ctx context.Context, symbol Symbol, body AnalyzeInstrumentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// AnalyzeMarketWithBody Analyze active instruments in the market
+	// AnalyzeMarketWithBody Analyze the instruments of a universe
 	//
 	// Takes any type of body and a specified content type.
 	//
 	// Corresponds with POST /api/v1/analysis/market (the `AnalyzeMarket` operationId).
-	AnalyzeMarketWithBody(ctx context.Context, params *AnalyzeMarketParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+	AnalyzeMarketWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// AnalyzeMarket Analyze active instruments in the market
+	// AnalyzeMarket Analyze the instruments of a universe
 	//
 	// Takes a body of the `application/json` content type.
 	//
 	// Corresponds with POST /api/v1/analysis/market (the `AnalyzeMarket` operationId).
-	AnalyzeMarket(ctx context.Context, params *AnalyzeMarketParams, body AnalyzeMarketJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+	AnalyzeMarket(ctx context.Context, body AnalyzeMarketJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// DeleteSession Revoke the current session
 	//
 	// Corresponds with DELETE /api/v1/auth/session (the `DeleteSession` operationId).
-	DeleteSession(ctx context.Context, params *DeleteSessionParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+	DeleteSession(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// CreateSession Exchange Telegram init data for a session token
 	//
 	// Corresponds with POST /api/v1/auth/session (the `CreateSession` operationId).
-	CreateSession(ctx context.Context, params *CreateSessionParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+	CreateSession(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListChartIndicators List the indicators charts of an interval request
 	//
@@ -2990,20 +2966,6 @@ type ClientInterface interface {
 
 	// ListFavorites performs a GET /api/v1/favorites (the `ListFavorites` operationId) request.
 	ListFavorites(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// AnalyzeFavoritesWithBody Analyze the current user's active favorite instruments
-	//
-	// Takes any type of body and a specified content type.
-	//
-	// Corresponds with POST /api/v1/favorites/analysis (the `AnalyzeFavorites` operationId).
-	AnalyzeFavoritesWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// AnalyzeFavorites Analyze the current user's active favorite instruments
-	//
-	// Takes a body of the `application/json` content type.
-	//
-	// Corresponds with POST /api/v1/favorites/analysis (the `AnalyzeFavorites` operationId).
-	AnalyzeFavorites(ctx context.Context, body AnalyzeFavoritesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// RemoveFavorite performs a DELETE /api/v1/favorites/{symbol} (the `RemoveFavorite` operationId) request.
 	RemoveFavorite(ctx context.Context, symbol Symbol, params *RemoveFavoriteParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -3047,7 +3009,7 @@ type ClientInterface interface {
 	// `tick_size`.
 	//
 	// Corresponds with GET /api/v1/instruments/{symbol}/grid-limits (the `GetInstrumentGridLimits` operationId).
-	GetInstrumentGridLimits(ctx context.Context, symbol Symbol, params *GetInstrumentGridLimitsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+	GetInstrumentGridLimits(ctx context.Context, symbol Symbol, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetCurrentUser Describe the authenticated user
 	//
@@ -3057,12 +3019,12 @@ type ClientInterface interface {
 	// GetLiveness Check whether the process is alive
 	//
 	// Corresponds with GET /health/live (the `GetLiveness` operationId).
-	GetLiveness(ctx context.Context, params *GetLivenessParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+	GetLiveness(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetReadiness Check whether required service dependencies are ready
 	//
 	// Corresponds with GET /health/ready (the `GetReadiness` operationId).
-	GetReadiness(ctx context.Context, params *GetReadinessParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+	GetReadiness(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 // GetCandleHistoryLoad Show the current or last history load
@@ -3331,6 +3293,21 @@ func (c *Client) DeleteStrategy(ctx context.Context, strategyId StrategyID, reqE
 	return c.Client.Do(req)
 }
 
+// GetStrategy Show a strategy
+//
+// Corresponds with GET /api/v1/admin/strategies/{strategy_id} (the `GetStrategy` operationId).
+func (c *Client) GetStrategy(ctx context.Context, strategyId StrategyID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetStrategyRequest(c.Server, strategyId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // SetStrategyEnabledWithBody Turn a strategy on or off
 //
 // Enabling starts the strategy afresh, without trades, and needs coins chosen, all active; disabling forgets its trades.
@@ -3407,9 +3384,11 @@ func (c *Client) UpdateStrategy(ctx context.Context, strategyId StrategyID, body
 	return c.Client.Do(req)
 }
 
-// BacktestStrategy Backtest a saved strategy on one coin
+// BacktestStrategyWithBody Backtest a strategy on one coin
 //
-// Evaluates the saved strategy, enabled or not, at the close of every
+// Backtests a saved strategy, enabled or not, or an unsaved one, whose
+// rules are checked as a save checks them. It evaluates the strategy at
+// the close of every
 // stored candle of the finest interval its rules read, and replays its
 // trades exactly as live signals trade, starting without a trade. Any active coin can be
 // backtested; coins read through `of` must be in the administrator's
@@ -3432,40 +3411,17 @@ func (c *Client) UpdateStrategy(ctx context.Context, strategyId StrategyID, body
 // falls; funding, leverage, and liquidation are not modeled, and it has
 // no baselines. A backtest that does not finish
 // within its time limit fails with `backtest_too_heavy`. At most two
-// backtests, saved or not, run at once; another fails at once with
-// `backtest_busy`.
+// backtests run at once; another fails at once with `backtest_busy`.
 //
 // A signal trades nothing: its backtest has no trades and no baselines,
 // and `signal` lists its entry signals and how the price moved after
 // them.
 //
-// Corresponds with GET /api/v1/admin/strategies/{strategy_id}/backtest (the `BacktestStrategy` operationId).
-func (c *Client) BacktestStrategy(ctx context.Context, strategyId StrategyID, params *BacktestStrategyParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewBacktestStrategyRequest(c.Server, strategyId, params)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-// BacktestStrategyDraftWithBody Backtest an unsaved strategy on one coin
-//
-// Backtests the strategy or signal of the body without saving it,
-// exactly as `GET /api/v1/admin/strategies/{strategy_id}/backtest`
-// backtests a saved one with the same rules. The rules and trading
-// settings are checked as a save checks them and fail with
-// `invalid_argument`. At most two backtests, saved or not, run at once;
-// another fails at once with `backtest_busy`.
-//
 // Takes any type of body and a specified content type.
 //
-// Corresponds with POST /api/v1/admin/strategy-backtests (the `BacktestStrategyDraft` operationId).
-func (c *Client) BacktestStrategyDraftWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewBacktestStrategyDraftRequestWithBody(c.Server, contentType, body)
+// Corresponds with POST /api/v1/admin/strategy-backtests (the `BacktestStrategy` operationId).
+func (c *Client) BacktestStrategyWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewBacktestStrategyRequestWithBody(c.Server, contentType, body)
 	if err != nil {
 		return nil, err
 	}
@@ -3476,20 +3432,44 @@ func (c *Client) BacktestStrategyDraftWithBody(ctx context.Context, contentType 
 	return c.Client.Do(req)
 }
 
-// BacktestStrategyDraft Backtest an unsaved strategy on one coin
+// BacktestStrategy Backtest a strategy on one coin
 //
-// Backtests the strategy or signal of the body without saving it,
-// exactly as `GET /api/v1/admin/strategies/{strategy_id}/backtest`
-// backtests a saved one with the same rules. The rules and trading
-// settings are checked as a save checks them and fail with
-// `invalid_argument`. At most two backtests, saved or not, run at once;
-// another fails at once with `backtest_busy`.
+// Backtests a saved strategy, enabled or not, or an unsaved one, whose
+// rules are checked as a save checks them. It evaluates the strategy at
+// the close of every
+// stored candle of the finest interval its rules read, and replays its
+// trades exactly as live signals trade, starting without a trade. Any active coin can be
+// backtested; coins read through `of` must be in the administrator's
+// favorites, otherwise their values are unknown. Only the stored closed
+// history is replayed (up to 20,000 candles; the administrator loads
+// deeper history with `POST /api/v1/admin/candle-history-loads`,
+// backtests never load it); when older candles may be missing, candles
+// before the full indicator warm-up are not evaluated.
+//
+// Every buy spends the same amount at the open of the candle after its
+// signal. A take profit or stop loss sells every buy of the trade at its
+// price on the candle that reaches it, or at that candle's open when it
+// opens past it; an exit rule sells at the open of the candle after its
+// signal. Both sides pay `fee`. A trade still open when the history
+// ends is valued at the last close. `from` and `to` limit the evaluated
+// candles by open time; older candles still warm the indicators up. Two baselines
+// cover the same evaluated period of a long strategy: buying and
+// holding, and buying the same amount at every candle (DCA). A short
+// strategy sells at entry and buys back at exit, gaining as the price
+// falls; funding, leverage, and liquidation are not modeled, and it has
+// no baselines. A backtest that does not finish
+// within its time limit fails with `backtest_too_heavy`. At most two
+// backtests run at once; another fails at once with `backtest_busy`.
+//
+// A signal trades nothing: its backtest has no trades and no baselines,
+// and `signal` lists its entry signals and how the price moved after
+// them.
 //
 // Takes a body of the `application/json` content type.
 //
-// Corresponds with POST /api/v1/admin/strategy-backtests (the `BacktestStrategyDraft` operationId).
-func (c *Client) BacktestStrategyDraft(ctx context.Context, body BacktestStrategyDraftJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewBacktestStrategyDraftRequest(c.Server, body)
+// Corresponds with POST /api/v1/admin/strategy-backtests (the `BacktestStrategy` operationId).
+func (c *Client) BacktestStrategy(ctx context.Context, body BacktestStrategyJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewBacktestStrategyRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -3689,8 +3669,8 @@ func (c *Client) UpdatePriceAlert(ctx context.Context, alertId AlertID, body Upd
 // Takes any type of body and a specified content type.
 //
 // Corresponds with POST /api/v1/analysis/instruments/{symbol} (the `AnalyzeInstrument` operationId).
-func (c *Client) AnalyzeInstrumentWithBody(ctx context.Context, symbol Symbol, params *AnalyzeInstrumentParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewAnalyzeInstrumentRequestWithBody(c.Server, symbol, params, contentType, body)
+func (c *Client) AnalyzeInstrumentWithBody(ctx context.Context, symbol Symbol, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAnalyzeInstrumentRequestWithBody(c.Server, symbol, contentType, body)
 	if err != nil {
 		return nil, err
 	}
@@ -3706,8 +3686,8 @@ func (c *Client) AnalyzeInstrumentWithBody(ctx context.Context, symbol Symbol, p
 // Takes a body of the `application/json` content type.
 //
 // Corresponds with POST /api/v1/analysis/instruments/{symbol} (the `AnalyzeInstrument` operationId).
-func (c *Client) AnalyzeInstrument(ctx context.Context, symbol Symbol, params *AnalyzeInstrumentParams, body AnalyzeInstrumentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewAnalyzeInstrumentRequest(c.Server, symbol, params, body)
+func (c *Client) AnalyzeInstrument(ctx context.Context, symbol Symbol, body AnalyzeInstrumentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAnalyzeInstrumentRequest(c.Server, symbol, body)
 	if err != nil {
 		return nil, err
 	}
@@ -3718,13 +3698,13 @@ func (c *Client) AnalyzeInstrument(ctx context.Context, symbol Symbol, params *A
 	return c.Client.Do(req)
 }
 
-// AnalyzeMarketWithBody Analyze active instruments in the market
+// AnalyzeMarketWithBody Analyze the instruments of a universe
 //
 // Takes any type of body and a specified content type.
 //
 // Corresponds with POST /api/v1/analysis/market (the `AnalyzeMarket` operationId).
-func (c *Client) AnalyzeMarketWithBody(ctx context.Context, params *AnalyzeMarketParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewAnalyzeMarketRequestWithBody(c.Server, params, contentType, body)
+func (c *Client) AnalyzeMarketWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAnalyzeMarketRequestWithBody(c.Server, contentType, body)
 	if err != nil {
 		return nil, err
 	}
@@ -3735,13 +3715,13 @@ func (c *Client) AnalyzeMarketWithBody(ctx context.Context, params *AnalyzeMarke
 	return c.Client.Do(req)
 }
 
-// AnalyzeMarket Analyze active instruments in the market
+// AnalyzeMarket Analyze the instruments of a universe
 //
 // Takes a body of the `application/json` content type.
 //
 // Corresponds with POST /api/v1/analysis/market (the `AnalyzeMarket` operationId).
-func (c *Client) AnalyzeMarket(ctx context.Context, params *AnalyzeMarketParams, body AnalyzeMarketJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewAnalyzeMarketRequest(c.Server, params, body)
+func (c *Client) AnalyzeMarket(ctx context.Context, body AnalyzeMarketJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAnalyzeMarketRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -3755,8 +3735,8 @@ func (c *Client) AnalyzeMarket(ctx context.Context, params *AnalyzeMarketParams,
 // DeleteSession Revoke the current session
 //
 // Corresponds with DELETE /api/v1/auth/session (the `DeleteSession` operationId).
-func (c *Client) DeleteSession(ctx context.Context, params *DeleteSessionParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewDeleteSessionRequest(c.Server, params)
+func (c *Client) DeleteSession(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteSessionRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -3770,8 +3750,8 @@ func (c *Client) DeleteSession(ctx context.Context, params *DeleteSessionParams,
 // CreateSession Exchange Telegram init data for a session token
 //
 // Corresponds with POST /api/v1/auth/session (the `CreateSession` operationId).
-func (c *Client) CreateSession(ctx context.Context, params *CreateSessionParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewCreateSessionRequest(c.Server, params)
+func (c *Client) CreateSession(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateSessionRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -3804,40 +3784,6 @@ func (c *Client) ListChartIndicators(ctx context.Context, params *ListChartIndic
 // ListFavorites performs a GET /api/v1/favorites (the `ListFavorites` operationId) request.
 func (c *Client) ListFavorites(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListFavoritesRequest(c.Server)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-// AnalyzeFavoritesWithBody Analyze the current user's active favorite instruments
-//
-// Takes any type of body and a specified content type.
-//
-// Corresponds with POST /api/v1/favorites/analysis (the `AnalyzeFavorites` operationId).
-func (c *Client) AnalyzeFavoritesWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewAnalyzeFavoritesRequestWithBody(c.Server, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-// AnalyzeFavorites Analyze the current user's active favorite instruments
-//
-// Takes a body of the `application/json` content type.
-//
-// Corresponds with POST /api/v1/favorites/analysis (the `AnalyzeFavorites` operationId).
-func (c *Client) AnalyzeFavorites(ctx context.Context, body AnalyzeFavoritesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewAnalyzeFavoritesRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -3960,8 +3906,8 @@ func (c *Client) ListInstrumentCandles(ctx context.Context, symbol Symbol, param
 // `tick_size`.
 //
 // Corresponds with GET /api/v1/instruments/{symbol}/grid-limits (the `GetInstrumentGridLimits` operationId).
-func (c *Client) GetInstrumentGridLimits(ctx context.Context, symbol Symbol, params *GetInstrumentGridLimitsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetInstrumentGridLimitsRequest(c.Server, symbol, params)
+func (c *Client) GetInstrumentGridLimits(ctx context.Context, symbol Symbol, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetInstrumentGridLimitsRequest(c.Server, symbol)
 	if err != nil {
 		return nil, err
 	}
@@ -3990,8 +3936,8 @@ func (c *Client) GetCurrentUser(ctx context.Context, reqEditors ...RequestEditor
 // GetLiveness Check whether the process is alive
 //
 // Corresponds with GET /health/live (the `GetLiveness` operationId).
-func (c *Client) GetLiveness(ctx context.Context, params *GetLivenessParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetLivenessRequest(c.Server, params)
+func (c *Client) GetLiveness(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetLivenessRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -4005,8 +3951,8 @@ func (c *Client) GetLiveness(ctx context.Context, params *GetLivenessParams, req
 // GetReadiness Check whether required service dependencies are ready
 //
 // Corresponds with GET /health/ready (the `GetReadiness` operationId).
-func (c *Client) GetReadiness(ctx context.Context, params *GetReadinessParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetReadinessRequest(c.Server, params)
+func (c *Client) GetReadiness(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetReadinessRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -4360,6 +4306,40 @@ func NewDeleteStrategyRequest(server string, strategyId StrategyID) (*http.Reque
 	return req, nil
 }
 
+// NewGetStrategyRequest constructs an http.Request for the GetStrategy method
+func NewGetStrategyRequest(server string, strategyId StrategyID) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "strategy_id", strategyId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/admin/strategies/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewSetStrategyEnabledRequest calls the generic SetStrategyEnabled builder with application/json body
 func NewSetStrategyEnabledRequest(server string, strategyId StrategyID, body SetStrategyEnabledJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -4454,112 +4434,19 @@ func NewUpdateStrategyRequestWithBody(server string, strategyId StrategyID, cont
 	return req, nil
 }
 
-// NewBacktestStrategyRequest constructs an http.Request for the BacktestStrategy method
-func NewBacktestStrategyRequest(server string, strategyId StrategyID, params *BacktestStrategyParams) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "strategy_id", strategyId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/v1/admin/strategies/%s/backtest", pathParam0)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	if params != nil {
-		// queryValues collects non-styled parameters (passthrough, JSON)
-		// that are safe to round-trip through url.Values.Encode().
-		queryValues := queryURL.Query()
-		// rawQueryFragments collects pre-encoded query fragments from
-		// styled parameters, preserving literal commas as delimiters
-		// per the OpenAPI spec (e.g. "color=blue,black,brown").
-		var rawQueryFragments []string
-
-		if queryFrag, err := runtime.StyleParamWithOptions("form", true, "symbol", params.Symbol, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-			return nil, err
-		} else {
-			for _, qp := range strings.Split(queryFrag, "&") {
-				rawQueryFragments = append(rawQueryFragments, qp)
-			}
-		}
-
-		if params.From != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "from", *params.From, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: "date-time"}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if params.To != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "to", *params.To, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: "date-time"}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if params.Chart != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "chart", *params.Chart, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if encoded := queryValues.Encode(); encoded != "" {
-			rawQueryFragments = append(rawQueryFragments, encoded)
-		}
-		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
-	}
-
-	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewBacktestStrategyDraftRequest calls the generic BacktestStrategyDraft builder with application/json body
-func NewBacktestStrategyDraftRequest(server string, body BacktestStrategyDraftJSONRequestBody) (*http.Request, error) {
+// NewBacktestStrategyRequest calls the generic BacktestStrategy builder with application/json body
+func NewBacktestStrategyRequest(server string, body BacktestStrategyJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
 	buf, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
 	bodyReader = bytes.NewReader(buf)
-	return NewBacktestStrategyDraftRequestWithBody(server, "application/json", bodyReader)
+	return NewBacktestStrategyRequestWithBody(server, "application/json", bodyReader)
 }
 
-// NewBacktestStrategyDraftRequestWithBody constructs an http.Request for the BacktestStrategyDraft method, with any body, and a specified content type
-func NewBacktestStrategyDraftRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+// NewBacktestStrategyRequestWithBody constructs an http.Request for the BacktestStrategy method, with any body, and a specified content type
+func NewBacktestStrategyRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	serverURL, err := url.Parse(server)
@@ -4844,18 +4731,18 @@ func NewUpdatePriceAlertRequestWithBody(server string, alertId AlertID, contentT
 }
 
 // NewAnalyzeInstrumentRequest calls the generic AnalyzeInstrument builder with application/json body
-func NewAnalyzeInstrumentRequest(server string, symbol Symbol, params *AnalyzeInstrumentParams, body AnalyzeInstrumentJSONRequestBody) (*http.Request, error) {
+func NewAnalyzeInstrumentRequest(server string, symbol Symbol, body AnalyzeInstrumentJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
 	buf, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
 	bodyReader = bytes.NewReader(buf)
-	return NewAnalyzeInstrumentRequestWithBody(server, symbol, params, "application/json", bodyReader)
+	return NewAnalyzeInstrumentRequestWithBody(server, symbol, "application/json", bodyReader)
 }
 
 // NewAnalyzeInstrumentRequestWithBody constructs an http.Request for the AnalyzeInstrument method, with any body, and a specified content type
-func NewAnalyzeInstrumentRequestWithBody(server string, symbol Symbol, params *AnalyzeInstrumentParams, contentType string, body io.Reader) (*http.Request, error) {
+func NewAnalyzeInstrumentRequestWithBody(server string, symbol Symbol, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -4887,37 +4774,22 @@ func NewAnalyzeInstrumentRequestWithBody(server string, symbol Symbol, params *A
 
 	req.Header.Add("Content-Type", contentType)
 
-	if params != nil {
-
-		if params.XRequestID != nil {
-			var headerParam0 string
-
-			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "X-Request-ID", *params.XRequestID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
-			if err != nil {
-				return nil, err
-			}
-
-			req.Header.Set("X-Request-ID", headerParam0)
-		}
-
-	}
-
 	return req, nil
 }
 
 // NewAnalyzeMarketRequest calls the generic AnalyzeMarket builder with application/json body
-func NewAnalyzeMarketRequest(server string, params *AnalyzeMarketParams, body AnalyzeMarketJSONRequestBody) (*http.Request, error) {
+func NewAnalyzeMarketRequest(server string, body AnalyzeMarketJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
 	buf, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
 	bodyReader = bytes.NewReader(buf)
-	return NewAnalyzeMarketRequestWithBody(server, params, "application/json", bodyReader)
+	return NewAnalyzeMarketRequestWithBody(server, "application/json", bodyReader)
 }
 
 // NewAnalyzeMarketRequestWithBody constructs an http.Request for the AnalyzeMarket method, with any body, and a specified content type
-func NewAnalyzeMarketRequestWithBody(server string, params *AnalyzeMarketParams, contentType string, body io.Reader) (*http.Request, error) {
+func NewAnalyzeMarketRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	serverURL, err := url.Parse(server)
@@ -4942,26 +4814,11 @@ func NewAnalyzeMarketRequestWithBody(server string, params *AnalyzeMarketParams,
 
 	req.Header.Add("Content-Type", contentType)
 
-	if params != nil {
-
-		if params.XRequestID != nil {
-			var headerParam0 string
-
-			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "X-Request-ID", *params.XRequestID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
-			if err != nil {
-				return nil, err
-			}
-
-			req.Header.Set("X-Request-ID", headerParam0)
-		}
-
-	}
-
 	return req, nil
 }
 
 // NewDeleteSessionRequest constructs an http.Request for the DeleteSession method
-func NewDeleteSessionRequest(server string, params *DeleteSessionParams) (*http.Request, error) {
+func NewDeleteSessionRequest(server string) (*http.Request, error) {
 	var err error
 
 	serverURL, err := url.Parse(server)
@@ -4984,26 +4841,11 @@ func NewDeleteSessionRequest(server string, params *DeleteSessionParams) (*http.
 		return nil, err
 	}
 
-	if params != nil {
-
-		if params.XRequestID != nil {
-			var headerParam0 string
-
-			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "X-Request-ID", *params.XRequestID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
-			if err != nil {
-				return nil, err
-			}
-
-			req.Header.Set("X-Request-ID", headerParam0)
-		}
-
-	}
-
 	return req, nil
 }
 
 // NewCreateSessionRequest constructs an http.Request for the CreateSession method
-func NewCreateSessionRequest(server string, params *CreateSessionParams) (*http.Request, error) {
+func NewCreateSessionRequest(server string) (*http.Request, error) {
 	var err error
 
 	serverURL, err := url.Parse(server)
@@ -5024,21 +4866,6 @@ func NewCreateSessionRequest(server string, params *CreateSessionParams) (*http.
 	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
 	if err != nil {
 		return nil, err
-	}
-
-	if params != nil {
-
-		if params.XRequestID != nil {
-			var headerParam0 string
-
-			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "X-Request-ID", *params.XRequestID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
-			if err != nil {
-				return nil, err
-			}
-
-			req.Header.Set("X-Request-ID", headerParam0)
-		}
-
 	}
 
 	return req, nil
@@ -5117,46 +4944,6 @@ func NewListFavoritesRequest(server string) (*http.Request, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	return req, nil
-}
-
-// NewAnalyzeFavoritesRequest calls the generic AnalyzeFavorites builder with application/json body
-func NewAnalyzeFavoritesRequest(server string, body AnalyzeFavoritesJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewAnalyzeFavoritesRequestWithBody(server, "application/json", bodyReader)
-}
-
-// NewAnalyzeFavoritesRequestWithBody constructs an http.Request for the AnalyzeFavorites method, with any body, and a specified content type
-func NewAnalyzeFavoritesRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/v1/favorites/analysis")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -5469,26 +5256,11 @@ func NewListInstrumentCandlesRequest(server string, symbol Symbol, params *ListI
 		return nil, err
 	}
 
-	if params != nil {
-
-		if params.XRequestID != nil {
-			var headerParam0 string
-
-			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "X-Request-ID", *params.XRequestID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
-			if err != nil {
-				return nil, err
-			}
-
-			req.Header.Set("X-Request-ID", headerParam0)
-		}
-
-	}
-
 	return req, nil
 }
 
 // NewGetInstrumentGridLimitsRequest constructs an http.Request for the GetInstrumentGridLimits method
-func NewGetInstrumentGridLimitsRequest(server string, symbol Symbol, params *GetInstrumentGridLimitsParams) (*http.Request, error) {
+func NewGetInstrumentGridLimitsRequest(server string, symbol Symbol) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -5516,21 +5288,6 @@ func NewGetInstrumentGridLimitsRequest(server string, symbol Symbol, params *Get
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
 	if err != nil {
 		return nil, err
-	}
-
-	if params != nil {
-
-		if params.XRequestID != nil {
-			var headerParam0 string
-
-			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "X-Request-ID", *params.XRequestID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
-			if err != nil {
-				return nil, err
-			}
-
-			req.Header.Set("X-Request-ID", headerParam0)
-		}
-
 	}
 
 	return req, nil
@@ -5564,7 +5321,7 @@ func NewGetCurrentUserRequest(server string) (*http.Request, error) {
 }
 
 // NewGetLivenessRequest constructs an http.Request for the GetLiveness method
-func NewGetLivenessRequest(server string, params *GetLivenessParams) (*http.Request, error) {
+func NewGetLivenessRequest(server string) (*http.Request, error) {
 	var err error
 
 	serverURL, err := url.Parse(server)
@@ -5587,26 +5344,11 @@ func NewGetLivenessRequest(server string, params *GetLivenessParams) (*http.Requ
 		return nil, err
 	}
 
-	if params != nil {
-
-		if params.XRequestID != nil {
-			var headerParam0 string
-
-			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "X-Request-ID", *params.XRequestID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
-			if err != nil {
-				return nil, err
-			}
-
-			req.Header.Set("X-Request-ID", headerParam0)
-		}
-
-	}
-
 	return req, nil
 }
 
 // NewGetReadinessRequest constructs an http.Request for the GetReadiness method
-func NewGetReadinessRequest(server string, params *GetReadinessParams) (*http.Request, error) {
+func NewGetReadinessRequest(server string) (*http.Request, error) {
 	var err error
 
 	serverURL, err := url.Parse(server)
@@ -5627,21 +5369,6 @@ func NewGetReadinessRequest(server string, params *GetReadinessParams) (*http.Re
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
 	if err != nil {
 		return nil, err
-	}
-
-	if params != nil {
-
-		if params.XRequestID != nil {
-			var headerParam0 string
-
-			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "X-Request-ID", *params.XRequestID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
-			if err != nil {
-				return nil, err
-			}
-
-			req.Header.Set("X-Request-ID", headerParam0)
-		}
-
 	}
 
 	return req, nil
@@ -5829,6 +5556,13 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with DELETE /api/v1/admin/strategies/{strategy_id} (the `DeleteStrategy` operationId).
 	DeleteStrategyWithResponse(ctx context.Context, strategyId StrategyID, reqEditors ...RequestEditorFn) (*DeleteStrategyResponse, error)
 
+	// GetStrategyWithResponse Show a strategy
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/admin/strategies/{strategy_id} (the `GetStrategy` operationId).
+	GetStrategyWithResponse(ctx context.Context, strategyId StrategyID, reqEditors ...RequestEditorFn) (*GetStrategyResponse, error)
+
 	// SetStrategyEnabledWithBodyWithResponse Turn a strategy on or off
 	//
 	// Enabling starts the strategy afresh, without trades, and needs coins chosen, all active; disabling forgets its trades.
@@ -5865,9 +5599,11 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with PUT /api/v1/admin/strategies/{strategy_id} (the `UpdateStrategy` operationId).
 	UpdateStrategyWithResponse(ctx context.Context, strategyId StrategyID, body UpdateStrategyJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateStrategyResponse, error)
 
-	// BacktestStrategyWithResponse Backtest a saved strategy on one coin
+	// BacktestStrategyWithBodyWithResponse Backtest a strategy on one coin
 	//
-	// Evaluates the saved strategy, enabled or not, at the close of every
+	// Backtests a saved strategy, enabled or not, or an unsaved one, whose
+	// rules are checked as a save checks them. It evaluates the strategy at
+	// the close of every
 	// stored candle of the finest interval its rules read, and replays its
 	// trades exactly as live signals trade, starting without a trade. Any active coin can be
 	// backtested; coins read through `of` must be in the administrator's
@@ -5890,45 +5626,54 @@ type ClientWithResponsesInterface interface {
 	// falls; funding, leverage, and liquidation are not modeled, and it has
 	// no baselines. A backtest that does not finish
 	// within its time limit fails with `backtest_too_heavy`. At most two
-	// backtests, saved or not, run at once; another fails at once with
-	// `backtest_busy`.
+	// backtests run at once; another fails at once with `backtest_busy`.
 	//
 	// A signal trades nothing: its backtest has no trades and no baselines,
 	// and `signal` lists its entry signals and how the price moved after
 	// them.
 	//
-	// Returns a wrapper object for the known response body format(s).
-	//
-	// Corresponds with GET /api/v1/admin/strategies/{strategy_id}/backtest (the `BacktestStrategy` operationId).
-	BacktestStrategyWithResponse(ctx context.Context, strategyId StrategyID, params *BacktestStrategyParams, reqEditors ...RequestEditorFn) (*BacktestStrategyResponse, error)
-
-	// BacktestStrategyDraftWithBodyWithResponse Backtest an unsaved strategy on one coin
-	//
-	// Backtests the strategy or signal of the body without saving it,
-	// exactly as `GET /api/v1/admin/strategies/{strategy_id}/backtest`
-	// backtests a saved one with the same rules. The rules and trading
-	// settings are checked as a save checks them and fail with
-	// `invalid_argument`. At most two backtests, saved or not, run at once;
-	// another fails at once with `backtest_busy`.
-	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
-	// Corresponds with POST /api/v1/admin/strategy-backtests (the `BacktestStrategyDraft` operationId).
-	BacktestStrategyDraftWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*BacktestStrategyDraftResponse, error)
+	// Corresponds with POST /api/v1/admin/strategy-backtests (the `BacktestStrategy` operationId).
+	BacktestStrategyWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*BacktestStrategyResponse, error)
 
-	// BacktestStrategyDraftWithResponse Backtest an unsaved strategy on one coin
+	// BacktestStrategyWithResponse Backtest a strategy on one coin
 	//
-	// Backtests the strategy or signal of the body without saving it,
-	// exactly as `GET /api/v1/admin/strategies/{strategy_id}/backtest`
-	// backtests a saved one with the same rules. The rules and trading
-	// settings are checked as a save checks them and fail with
-	// `invalid_argument`. At most two backtests, saved or not, run at once;
-	// another fails at once with `backtest_busy`.
+	// Backtests a saved strategy, enabled or not, or an unsaved one, whose
+	// rules are checked as a save checks them. It evaluates the strategy at
+	// the close of every
+	// stored candle of the finest interval its rules read, and replays its
+	// trades exactly as live signals trade, starting without a trade. Any active coin can be
+	// backtested; coins read through `of` must be in the administrator's
+	// favorites, otherwise their values are unknown. Only the stored closed
+	// history is replayed (up to 20,000 candles; the administrator loads
+	// deeper history with `POST /api/v1/admin/candle-history-loads`,
+	// backtests never load it); when older candles may be missing, candles
+	// before the full indicator warm-up are not evaluated.
+	//
+	// Every buy spends the same amount at the open of the candle after its
+	// signal. A take profit or stop loss sells every buy of the trade at its
+	// price on the candle that reaches it, or at that candle's open when it
+	// opens past it; an exit rule sells at the open of the candle after its
+	// signal. Both sides pay `fee`. A trade still open when the history
+	// ends is valued at the last close. `from` and `to` limit the evaluated
+	// candles by open time; older candles still warm the indicators up. Two baselines
+	// cover the same evaluated period of a long strategy: buying and
+	// holding, and buying the same amount at every candle (DCA). A short
+	// strategy sells at entry and buys back at exit, gaining as the price
+	// falls; funding, leverage, and liquidation are not modeled, and it has
+	// no baselines. A backtest that does not finish
+	// within its time limit fails with `backtest_too_heavy`. At most two
+	// backtests run at once; another fails at once with `backtest_busy`.
+	//
+	// A signal trades nothing: its backtest has no trades and no baselines,
+	// and `signal` lists its entry signals and how the price moved after
+	// them.
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
-	// Corresponds with POST /api/v1/admin/strategy-backtests (the `BacktestStrategyDraft` operationId).
-	BacktestStrategyDraftWithResponse(ctx context.Context, body BacktestStrategyDraftJSONRequestBody, reqEditors ...RequestEditorFn) (*BacktestStrategyDraftResponse, error)
+	// Corresponds with POST /api/v1/admin/strategy-backtests (the `BacktestStrategy` operationId).
+	BacktestStrategyWithResponse(ctx context.Context, body BacktestStrategyJSONRequestBody, reqEditors ...RequestEditorFn) (*BacktestStrategyResponse, error)
 
 	// GetStrategyCatalogWithResponse List what strategy expressions read
 	//
@@ -6029,42 +5774,42 @@ type ClientWithResponsesInterface interface {
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with POST /api/v1/analysis/instruments/{symbol} (the `AnalyzeInstrument` operationId).
-	AnalyzeInstrumentWithBodyWithResponse(ctx context.Context, symbol Symbol, params *AnalyzeInstrumentParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AnalyzeInstrumentResponse, error)
+	AnalyzeInstrumentWithBodyWithResponse(ctx context.Context, symbol Symbol, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AnalyzeInstrumentResponse, error)
 
 	// AnalyzeInstrumentWithResponse Analyze one active instrument
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with POST /api/v1/analysis/instruments/{symbol} (the `AnalyzeInstrument` operationId).
-	AnalyzeInstrumentWithResponse(ctx context.Context, symbol Symbol, params *AnalyzeInstrumentParams, body AnalyzeInstrumentJSONRequestBody, reqEditors ...RequestEditorFn) (*AnalyzeInstrumentResponse, error)
+	AnalyzeInstrumentWithResponse(ctx context.Context, symbol Symbol, body AnalyzeInstrumentJSONRequestBody, reqEditors ...RequestEditorFn) (*AnalyzeInstrumentResponse, error)
 
-	// AnalyzeMarketWithBodyWithResponse Analyze active instruments in the market
+	// AnalyzeMarketWithBodyWithResponse Analyze the instruments of a universe
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with POST /api/v1/analysis/market (the `AnalyzeMarket` operationId).
-	AnalyzeMarketWithBodyWithResponse(ctx context.Context, params *AnalyzeMarketParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AnalyzeMarketResponse, error)
+	AnalyzeMarketWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AnalyzeMarketResponse, error)
 
-	// AnalyzeMarketWithResponse Analyze active instruments in the market
+	// AnalyzeMarketWithResponse Analyze the instruments of a universe
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with POST /api/v1/analysis/market (the `AnalyzeMarket` operationId).
-	AnalyzeMarketWithResponse(ctx context.Context, params *AnalyzeMarketParams, body AnalyzeMarketJSONRequestBody, reqEditors ...RequestEditorFn) (*AnalyzeMarketResponse, error)
+	AnalyzeMarketWithResponse(ctx context.Context, body AnalyzeMarketJSONRequestBody, reqEditors ...RequestEditorFn) (*AnalyzeMarketResponse, error)
 
 	// DeleteSessionWithResponse Revoke the current session
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with DELETE /api/v1/auth/session (the `DeleteSession` operationId).
-	DeleteSessionWithResponse(ctx context.Context, params *DeleteSessionParams, reqEditors ...RequestEditorFn) (*DeleteSessionResponse, error)
+	DeleteSessionWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*DeleteSessionResponse, error)
 
 	// CreateSessionWithResponse Exchange Telegram init data for a session token
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with POST /api/v1/auth/session (the `CreateSession` operationId).
-	CreateSessionWithResponse(ctx context.Context, params *CreateSessionParams, reqEditors ...RequestEditorFn) (*CreateSessionResponse, error)
+	CreateSessionWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*CreateSessionResponse, error)
 
 	// ListChartIndicatorsWithResponse List the indicators charts of an interval request
 	//
@@ -6081,20 +5826,6 @@ type ClientWithResponsesInterface interface {
 	//
 	// Returns a wrapper object for the known response body format(s).
 	ListFavoritesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListFavoritesResponse, error)
-
-	// AnalyzeFavoritesWithBodyWithResponse Analyze the current user's active favorite instruments
-	//
-	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
-	//
-	// Corresponds with POST /api/v1/favorites/analysis (the `AnalyzeFavorites` operationId).
-	AnalyzeFavoritesWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AnalyzeFavoritesResponse, error)
-
-	// AnalyzeFavoritesWithResponse Analyze the current user's active favorite instruments
-	//
-	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
-	//
-	// Corresponds with POST /api/v1/favorites/analysis (the `AnalyzeFavorites` operationId).
-	AnalyzeFavoritesWithResponse(ctx context.Context, body AnalyzeFavoritesJSONRequestBody, reqEditors ...RequestEditorFn) (*AnalyzeFavoritesResponse, error)
 
 	// RemoveFavoriteWithResponse performs a DELETE /api/v1/favorites/{symbol} (the `RemoveFavorite` operationId) request.
 	//
@@ -6152,7 +5883,7 @@ type ClientWithResponsesInterface interface {
 	// Returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with GET /api/v1/instruments/{symbol}/grid-limits (the `GetInstrumentGridLimits` operationId).
-	GetInstrumentGridLimitsWithResponse(ctx context.Context, symbol Symbol, params *GetInstrumentGridLimitsParams, reqEditors ...RequestEditorFn) (*GetInstrumentGridLimitsResponse, error)
+	GetInstrumentGridLimitsWithResponse(ctx context.Context, symbol Symbol, reqEditors ...RequestEditorFn) (*GetInstrumentGridLimitsResponse, error)
 
 	// GetCurrentUserWithResponse Describe the authenticated user
 	//
@@ -6166,24 +5897,14 @@ type ClientWithResponsesInterface interface {
 	// Returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with GET /health/live (the `GetLiveness` operationId).
-	GetLivenessWithResponse(ctx context.Context, params *GetLivenessParams, reqEditors ...RequestEditorFn) (*GetLivenessResponse, error)
+	GetLivenessWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetLivenessResponse, error)
 
 	// GetReadinessWithResponse Check whether required service dependencies are ready
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with GET /health/ready (the `GetReadiness` operationId).
-	GetReadinessWithResponse(ctx context.Context, params *GetReadinessParams, reqEditors ...RequestEditorFn) (*GetReadinessResponse, error)
-}
-
-// GetCandleHistoryLoadResponse401Headers the declared response headers of an HTTP 401 response for GetCandleHistoryLoad
-type GetCandleHistoryLoadResponse401Headers struct {
-	XRequestID string
-}
-
-// GetCandleHistoryLoadResponse500Headers the declared response headers of an HTTP 500 response for GetCandleHistoryLoad
-type GetCandleHistoryLoadResponse500Headers struct {
-	XRequestID string
+	GetReadinessWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetReadinessResponse, error)
 }
 
 type GetCandleHistoryLoadResponse struct {
@@ -6197,10 +5918,6 @@ type GetCandleHistoryLoadResponse struct {
 	JSON403 *AdministratorRequired
 	// JSON500 the response for an HTTP 500 `application/json` response
 	JSON500 *InternalError
-	// Headers401 the parsed response headers for an HTTP 401 response
-	Headers401 *GetCandleHistoryLoadResponse401Headers
-	// Headers500 the parsed response headers for an HTTP 500 response
-	Headers500 *GetCandleHistoryLoadResponse500Headers
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
@@ -6252,16 +5969,6 @@ func (r GetCandleHistoryLoadResponse) ContentType() string {
 	return ""
 }
 
-// ListIndicatorTypesResponse401Headers the declared response headers of an HTTP 401 response for ListIndicatorTypes
-type ListIndicatorTypesResponse401Headers struct {
-	XRequestID string
-}
-
-// ListIndicatorTypesResponse500Headers the declared response headers of an HTTP 500 response for ListIndicatorTypes
-type ListIndicatorTypesResponse500Headers struct {
-	XRequestID string
-}
-
 type ListIndicatorTypesResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -6273,10 +5980,6 @@ type ListIndicatorTypesResponse struct {
 	JSON403 *AdministratorRequired
 	// JSON500 the response for an HTTP 500 `application/json` response
 	JSON500 *InternalError
-	// Headers401 the parsed response headers for an HTTP 401 response
-	Headers401 *ListIndicatorTypesResponse401Headers
-	// Headers500 the parsed response headers for an HTTP 500 response
-	Headers500 *ListIndicatorTypesResponse500Headers
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
@@ -6328,21 +6031,6 @@ func (r ListIndicatorTypesResponse) ContentType() string {
 	return ""
 }
 
-// ReorderScannerIndicatorsResponse400Headers the declared response headers of an HTTP 400 response for ReorderScannerIndicators
-type ReorderScannerIndicatorsResponse400Headers struct {
-	XRequestID string
-}
-
-// ReorderScannerIndicatorsResponse401Headers the declared response headers of an HTTP 401 response for ReorderScannerIndicators
-type ReorderScannerIndicatorsResponse401Headers struct {
-	XRequestID string
-}
-
-// ReorderScannerIndicatorsResponse500Headers the declared response headers of an HTTP 500 response for ReorderScannerIndicators
-type ReorderScannerIndicatorsResponse500Headers struct {
-	XRequestID string
-}
-
 type ReorderScannerIndicatorsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -6358,12 +6046,6 @@ type ReorderScannerIndicatorsResponse struct {
 	JSON404 *ScannerIndicatorNotFound
 	// JSON500 the response for an HTTP 500 `application/json` response
 	JSON500 *InternalError
-	// Headers400 the parsed response headers for an HTTP 400 response
-	Headers400 *ReorderScannerIndicatorsResponse400Headers
-	// Headers401 the parsed response headers for an HTTP 401 response
-	Headers401 *ReorderScannerIndicatorsResponse401Headers
-	// Headers500 the parsed response headers for an HTTP 500 response
-	Headers500 *ReorderScannerIndicatorsResponse500Headers
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
@@ -6425,16 +6107,6 @@ func (r ReorderScannerIndicatorsResponse) ContentType() string {
 	return ""
 }
 
-// ListScannerIndicatorsResponse401Headers the declared response headers of an HTTP 401 response for ListScannerIndicators
-type ListScannerIndicatorsResponse401Headers struct {
-	XRequestID string
-}
-
-// ListScannerIndicatorsResponse500Headers the declared response headers of an HTTP 500 response for ListScannerIndicators
-type ListScannerIndicatorsResponse500Headers struct {
-	XRequestID string
-}
-
 type ListScannerIndicatorsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -6446,10 +6118,6 @@ type ListScannerIndicatorsResponse struct {
 	JSON403 *AdministratorRequired
 	// JSON500 the response for an HTTP 500 `application/json` response
 	JSON500 *InternalError
-	// Headers401 the parsed response headers for an HTTP 401 response
-	Headers401 *ListScannerIndicatorsResponse401Headers
-	// Headers500 the parsed response headers for an HTTP 500 response
-	Headers500 *ListScannerIndicatorsResponse500Headers
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
@@ -6501,21 +6169,6 @@ func (r ListScannerIndicatorsResponse) ContentType() string {
 	return ""
 }
 
-// CreateScannerIndicatorResponse400Headers the declared response headers of an HTTP 400 response for CreateScannerIndicator
-type CreateScannerIndicatorResponse400Headers struct {
-	XRequestID string
-}
-
-// CreateScannerIndicatorResponse401Headers the declared response headers of an HTTP 401 response for CreateScannerIndicator
-type CreateScannerIndicatorResponse401Headers struct {
-	XRequestID string
-}
-
-// CreateScannerIndicatorResponse500Headers the declared response headers of an HTTP 500 response for CreateScannerIndicator
-type CreateScannerIndicatorResponse500Headers struct {
-	XRequestID string
-}
-
 type CreateScannerIndicatorResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -6531,12 +6184,6 @@ type CreateScannerIndicatorResponse struct {
 	JSON409 *ScannerIndicatorConflict
 	// JSON500 the response for an HTTP 500 `application/json` response
 	JSON500 *InternalError
-	// Headers400 the parsed response headers for an HTTP 400 response
-	Headers400 *CreateScannerIndicatorResponse400Headers
-	// Headers401 the parsed response headers for an HTTP 401 response
-	Headers401 *CreateScannerIndicatorResponse401Headers
-	// Headers500 the parsed response headers for an HTTP 500 response
-	Headers500 *CreateScannerIndicatorResponse500Headers
 }
 
 // GetJSON201 returns the response for an HTTP 201 `application/json` response
@@ -6598,16 +6245,6 @@ func (r CreateScannerIndicatorResponse) ContentType() string {
 	return ""
 }
 
-// DeleteScannerIndicatorResponse401Headers the declared response headers of an HTTP 401 response for DeleteScannerIndicator
-type DeleteScannerIndicatorResponse401Headers struct {
-	XRequestID string
-}
-
-// DeleteScannerIndicatorResponse500Headers the declared response headers of an HTTP 500 response for DeleteScannerIndicator
-type DeleteScannerIndicatorResponse500Headers struct {
-	XRequestID string
-}
-
 type DeleteScannerIndicatorResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -6619,10 +6256,6 @@ type DeleteScannerIndicatorResponse struct {
 	JSON404 *ScannerIndicatorNotFound
 	// JSON500 the response for an HTTP 500 `application/json` response
 	JSON500 *InternalError
-	// Headers401 the parsed response headers for an HTTP 401 response
-	Headers401 *DeleteScannerIndicatorResponse401Headers
-	// Headers500 the parsed response headers for an HTTP 500 response
-	Headers500 *DeleteScannerIndicatorResponse500Headers
 }
 
 // GetJSON401 returns the response for an HTTP 401 `application/json` response
@@ -6674,21 +6307,6 @@ func (r DeleteScannerIndicatorResponse) ContentType() string {
 	return ""
 }
 
-// UpdateScannerIndicatorResponse400Headers the declared response headers of an HTTP 400 response for UpdateScannerIndicator
-type UpdateScannerIndicatorResponse400Headers struct {
-	XRequestID string
-}
-
-// UpdateScannerIndicatorResponse401Headers the declared response headers of an HTTP 401 response for UpdateScannerIndicator
-type UpdateScannerIndicatorResponse401Headers struct {
-	XRequestID string
-}
-
-// UpdateScannerIndicatorResponse500Headers the declared response headers of an HTTP 500 response for UpdateScannerIndicator
-type UpdateScannerIndicatorResponse500Headers struct {
-	XRequestID string
-}
-
 type UpdateScannerIndicatorResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -6706,12 +6324,6 @@ type UpdateScannerIndicatorResponse struct {
 	JSON409 *ScannerIndicatorConflict
 	// JSON500 the response for an HTTP 500 `application/json` response
 	JSON500 *InternalError
-	// Headers400 the parsed response headers for an HTTP 400 response
-	Headers400 *UpdateScannerIndicatorResponse400Headers
-	// Headers401 the parsed response headers for an HTTP 401 response
-	Headers401 *UpdateScannerIndicatorResponse401Headers
-	// Headers500 the parsed response headers for an HTTP 500 response
-	Headers500 *UpdateScannerIndicatorResponse500Headers
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
@@ -6778,16 +6390,6 @@ func (r UpdateScannerIndicatorResponse) ContentType() string {
 	return ""
 }
 
-// ListStrategiesResponse401Headers the declared response headers of an HTTP 401 response for ListStrategies
-type ListStrategiesResponse401Headers struct {
-	XRequestID string
-}
-
-// ListStrategiesResponse500Headers the declared response headers of an HTTP 500 response for ListStrategies
-type ListStrategiesResponse500Headers struct {
-	XRequestID string
-}
-
 type ListStrategiesResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -6799,10 +6401,6 @@ type ListStrategiesResponse struct {
 	JSON403 *AdministratorRequired
 	// JSON500 the response for an HTTP 500 `application/json` response
 	JSON500 *InternalError
-	// Headers401 the parsed response headers for an HTTP 401 response
-	Headers401 *ListStrategiesResponse401Headers
-	// Headers500 the parsed response headers for an HTTP 500 response
-	Headers500 *ListStrategiesResponse500Headers
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
@@ -6854,28 +6452,13 @@ func (r ListStrategiesResponse) ContentType() string {
 	return ""
 }
 
-// CreateStrategyResponse400Headers the declared response headers of an HTTP 400 response for CreateStrategy
-type CreateStrategyResponse400Headers struct {
-	XRequestID string
-}
-
-// CreateStrategyResponse401Headers the declared response headers of an HTTP 401 response for CreateStrategy
-type CreateStrategyResponse401Headers struct {
-	XRequestID string
-}
-
-// CreateStrategyResponse500Headers the declared response headers of an HTTP 500 response for CreateStrategy
-type CreateStrategyResponse500Headers struct {
-	XRequestID string
-}
-
 type CreateStrategyResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	// JSON201 the response for an HTTP 201 `application/json` response
 	JSON201 *Strategy
 	// JSON400 the response for an HTTP 400 `application/json` response
-	JSON400 *BadRequest
+	JSON400 *StrategyInvalid
 	// JSON401 the response for an HTTP 401 `application/json` response
 	JSON401 *Unauthenticated
 	// JSON403 the response for an HTTP 403 `application/json` response
@@ -6884,12 +6467,6 @@ type CreateStrategyResponse struct {
 	JSON409 *StrategyConflict
 	// JSON500 the response for an HTTP 500 `application/json` response
 	JSON500 *InternalError
-	// Headers400 the parsed response headers for an HTTP 400 response
-	Headers400 *CreateStrategyResponse400Headers
-	// Headers401 the parsed response headers for an HTTP 401 response
-	Headers401 *CreateStrategyResponse401Headers
-	// Headers500 the parsed response headers for an HTTP 500 response
-	Headers500 *CreateStrategyResponse500Headers
 }
 
 // GetJSON201 returns the response for an HTTP 201 `application/json` response
@@ -6898,7 +6475,7 @@ func (r CreateStrategyResponse) GetJSON201() *Strategy {
 }
 
 // GetJSON400 returns the response for an HTTP 400 `application/json` response
-func (r CreateStrategyResponse) GetJSON400() *BadRequest {
+func (r CreateStrategyResponse) GetJSON400() *StrategyInvalid {
 	return r.JSON400
 }
 
@@ -6951,16 +6528,6 @@ func (r CreateStrategyResponse) ContentType() string {
 	return ""
 }
 
-// DeleteStrategyResponse401Headers the declared response headers of an HTTP 401 response for DeleteStrategy
-type DeleteStrategyResponse401Headers struct {
-	XRequestID string
-}
-
-// DeleteStrategyResponse500Headers the declared response headers of an HTTP 500 response for DeleteStrategy
-type DeleteStrategyResponse500Headers struct {
-	XRequestID string
-}
-
 type DeleteStrategyResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -6972,10 +6539,6 @@ type DeleteStrategyResponse struct {
 	JSON404 *StrategyNotFound
 	// JSON500 the response for an HTTP 500 `application/json` response
 	JSON500 *InternalError
-	// Headers401 the parsed response headers for an HTTP 401 response
-	Headers401 *DeleteStrategyResponse401Headers
-	// Headers500 the parsed response headers for an HTTP 500 response
-	Headers500 *DeleteStrategyResponse500Headers
 }
 
 // GetJSON401 returns the response for an HTTP 401 `application/json` response
@@ -7027,28 +6590,11 @@ func (r DeleteStrategyResponse) ContentType() string {
 	return ""
 }
 
-// SetStrategyEnabledResponse400Headers the declared response headers of an HTTP 400 response for SetStrategyEnabled
-type SetStrategyEnabledResponse400Headers struct {
-	XRequestID string
-}
-
-// SetStrategyEnabledResponse401Headers the declared response headers of an HTTP 401 response for SetStrategyEnabled
-type SetStrategyEnabledResponse401Headers struct {
-	XRequestID string
-}
-
-// SetStrategyEnabledResponse500Headers the declared response headers of an HTTP 500 response for SetStrategyEnabled
-type SetStrategyEnabledResponse500Headers struct {
-	XRequestID string
-}
-
-type SetStrategyEnabledResponse struct {
+type GetStrategyResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	// JSON200 the response for an HTTP 200 `application/json` response
 	JSON200 *Strategy
-	// JSON400 the response for an HTTP 400 `application/json` response
-	JSON400 *BadRequest
 	// JSON401 the response for an HTTP 401 `application/json` response
 	JSON401 *Unauthenticated
 	// JSON403 the response for an HTTP 403 `application/json` response
@@ -7057,12 +6603,77 @@ type SetStrategyEnabledResponse struct {
 	JSON404 *StrategyNotFound
 	// JSON500 the response for an HTTP 500 `application/json` response
 	JSON500 *InternalError
-	// Headers400 the parsed response headers for an HTTP 400 response
-	Headers400 *SetStrategyEnabledResponse400Headers
-	// Headers401 the parsed response headers for an HTTP 401 response
-	Headers401 *SetStrategyEnabledResponse401Headers
-	// Headers500 the parsed response headers for an HTTP 500 response
-	Headers500 *SetStrategyEnabledResponse500Headers
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetStrategyResponse) GetJSON200() *Strategy {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r GetStrategyResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r GetStrategyResponse) GetJSON403() *AdministratorRequired {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r GetStrategyResponse) GetJSON404() *StrategyNotFound {
+	return r.JSON404
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r GetStrategyResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetBody returns the raw response body bytes
+func (r GetStrategyResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetStrategyResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetStrategyResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetStrategyResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type SetStrategyEnabledResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Strategy
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *StrategyInvalid
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *AdministratorRequired
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *StrategyNotFound
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
@@ -7071,7 +6682,7 @@ func (r SetStrategyEnabledResponse) GetJSON200() *Strategy {
 }
 
 // GetJSON400 returns the response for an HTTP 400 `application/json` response
-func (r SetStrategyEnabledResponse) GetJSON400() *BadRequest {
+func (r SetStrategyEnabledResponse) GetJSON400() *StrategyInvalid {
 	return r.JSON400
 }
 
@@ -7124,28 +6735,13 @@ func (r SetStrategyEnabledResponse) ContentType() string {
 	return ""
 }
 
-// UpdateStrategyResponse400Headers the declared response headers of an HTTP 400 response for UpdateStrategy
-type UpdateStrategyResponse400Headers struct {
-	XRequestID string
-}
-
-// UpdateStrategyResponse401Headers the declared response headers of an HTTP 401 response for UpdateStrategy
-type UpdateStrategyResponse401Headers struct {
-	XRequestID string
-}
-
-// UpdateStrategyResponse500Headers the declared response headers of an HTTP 500 response for UpdateStrategy
-type UpdateStrategyResponse500Headers struct {
-	XRequestID string
-}
-
 type UpdateStrategyResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	// JSON200 the response for an HTTP 200 `application/json` response
 	JSON200 *Strategy
 	// JSON400 the response for an HTTP 400 `application/json` response
-	JSON400 *BadRequest
+	JSON400 *StrategyInvalid
 	// JSON401 the response for an HTTP 401 `application/json` response
 	JSON401 *Unauthenticated
 	// JSON403 the response for an HTTP 403 `application/json` response
@@ -7156,12 +6752,6 @@ type UpdateStrategyResponse struct {
 	JSON409 *StrategyConflict
 	// JSON500 the response for an HTTP 500 `application/json` response
 	JSON500 *InternalError
-	// Headers400 the parsed response headers for an HTTP 400 response
-	Headers400 *UpdateStrategyResponse400Headers
-	// Headers401 the parsed response headers for an HTTP 401 response
-	Headers401 *UpdateStrategyResponse401Headers
-	// Headers500 the parsed response headers for an HTTP 500 response
-	Headers500 *UpdateStrategyResponse500Headers
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
@@ -7170,7 +6760,7 @@ func (r UpdateStrategyResponse) GetJSON200() *Strategy {
 }
 
 // GetJSON400 returns the response for an HTTP 400 `application/json` response
-func (r UpdateStrategyResponse) GetJSON400() *BadRequest {
+func (r UpdateStrategyResponse) GetJSON400() *StrategyInvalid {
 	return r.JSON400
 }
 
@@ -7228,43 +6818,13 @@ func (r UpdateStrategyResponse) ContentType() string {
 	return ""
 }
 
-// BacktestStrategyResponse400Headers the declared response headers of an HTTP 400 response for BacktestStrategy
-type BacktestStrategyResponse400Headers struct {
-	XRequestID string
-}
-
-// BacktestStrategyResponse401Headers the declared response headers of an HTTP 401 response for BacktestStrategy
-type BacktestStrategyResponse401Headers struct {
-	XRequestID string
-}
-
-// BacktestStrategyResponse404Headers the declared response headers of an HTTP 404 response for BacktestStrategy
-type BacktestStrategyResponse404Headers struct {
-	XRequestID string
-}
-
-// BacktestStrategyResponse429Headers the declared response headers of an HTTP 429 response for BacktestStrategy
-type BacktestStrategyResponse429Headers struct {
-	XRequestID string
-}
-
-// BacktestStrategyResponse500Headers the declared response headers of an HTTP 500 response for BacktestStrategy
-type BacktestStrategyResponse500Headers struct {
-	XRequestID string
-}
-
-// BacktestStrategyResponse503Headers the declared response headers of an HTTP 503 response for BacktestStrategy
-type BacktestStrategyResponse503Headers struct {
-	XRequestID string
-}
-
 type BacktestStrategyResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	// JSON200 the response for an HTTP 200 `application/json` response
 	JSON200 *StrategyBacktest
 	// JSON400 the response for an HTTP 400 `application/json` response
-	JSON400 *BadRequest
+	JSON400 *StrategyInvalid
 	// JSON401 the response for an HTTP 401 `application/json` response
 	JSON401 *Unauthenticated
 	// JSON403 the response for an HTTP 403 `application/json` response
@@ -7277,18 +6837,6 @@ type BacktestStrategyResponse struct {
 	JSON500 *InternalError
 	// JSON503 the response for an HTTP 503 `application/json` response
 	JSON503 *BacktestTooHeavy
-	// Headers400 the parsed response headers for an HTTP 400 response
-	Headers400 *BacktestStrategyResponse400Headers
-	// Headers401 the parsed response headers for an HTTP 401 response
-	Headers401 *BacktestStrategyResponse401Headers
-	// Headers404 the parsed response headers for an HTTP 404 response
-	Headers404 *BacktestStrategyResponse404Headers
-	// Headers429 the parsed response headers for an HTTP 429 response
-	Headers429 *BacktestStrategyResponse429Headers
-	// Headers500 the parsed response headers for an HTTP 500 response
-	Headers500 *BacktestStrategyResponse500Headers
-	// Headers503 the parsed response headers for an HTTP 503 response
-	Headers503 *BacktestStrategyResponse503Headers
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
@@ -7297,7 +6845,7 @@ func (r BacktestStrategyResponse) GetJSON200() *StrategyBacktest {
 }
 
 // GetJSON400 returns the response for an HTTP 400 `application/json` response
-func (r BacktestStrategyResponse) GetJSON400() *BadRequest {
+func (r BacktestStrategyResponse) GetJSON400() *StrategyInvalid {
 	return r.JSON400
 }
 
@@ -7360,148 +6908,6 @@ func (r BacktestStrategyResponse) ContentType() string {
 	return ""
 }
 
-// BacktestStrategyDraftResponse400Headers the declared response headers of an HTTP 400 response for BacktestStrategyDraft
-type BacktestStrategyDraftResponse400Headers struct {
-	XRequestID string
-}
-
-// BacktestStrategyDraftResponse401Headers the declared response headers of an HTTP 401 response for BacktestStrategyDraft
-type BacktestStrategyDraftResponse401Headers struct {
-	XRequestID string
-}
-
-// BacktestStrategyDraftResponse404Headers the declared response headers of an HTTP 404 response for BacktestStrategyDraft
-type BacktestStrategyDraftResponse404Headers struct {
-	XRequestID string
-}
-
-// BacktestStrategyDraftResponse429Headers the declared response headers of an HTTP 429 response for BacktestStrategyDraft
-type BacktestStrategyDraftResponse429Headers struct {
-	XRequestID string
-}
-
-// BacktestStrategyDraftResponse500Headers the declared response headers of an HTTP 500 response for BacktestStrategyDraft
-type BacktestStrategyDraftResponse500Headers struct {
-	XRequestID string
-}
-
-// BacktestStrategyDraftResponse503Headers the declared response headers of an HTTP 503 response for BacktestStrategyDraft
-type BacktestStrategyDraftResponse503Headers struct {
-	XRequestID string
-}
-
-type BacktestStrategyDraftResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	// JSON200 the response for an HTTP 200 `application/json` response
-	JSON200 *StrategyBacktest
-	// JSON400 the response for an HTTP 400 `application/json` response
-	JSON400 *BadRequest
-	// JSON401 the response for an HTTP 401 `application/json` response
-	JSON401 *Unauthenticated
-	// JSON403 the response for an HTTP 403 `application/json` response
-	JSON403 *AdministratorRequired
-	// JSON404 the response for an HTTP 404 `application/json` response
-	JSON404 *SymbolNotFound
-	// JSON429 the response for an HTTP 429 `application/json` response
-	JSON429 *BacktestBusy
-	// JSON500 the response for an HTTP 500 `application/json` response
-	JSON500 *InternalError
-	// JSON503 the response for an HTTP 503 `application/json` response
-	JSON503 *BacktestTooHeavy
-	// Headers400 the parsed response headers for an HTTP 400 response
-	Headers400 *BacktestStrategyDraftResponse400Headers
-	// Headers401 the parsed response headers for an HTTP 401 response
-	Headers401 *BacktestStrategyDraftResponse401Headers
-	// Headers404 the parsed response headers for an HTTP 404 response
-	Headers404 *BacktestStrategyDraftResponse404Headers
-	// Headers429 the parsed response headers for an HTTP 429 response
-	Headers429 *BacktestStrategyDraftResponse429Headers
-	// Headers500 the parsed response headers for an HTTP 500 response
-	Headers500 *BacktestStrategyDraftResponse500Headers
-	// Headers503 the parsed response headers for an HTTP 503 response
-	Headers503 *BacktestStrategyDraftResponse503Headers
-}
-
-// GetJSON200 returns the response for an HTTP 200 `application/json` response
-func (r BacktestStrategyDraftResponse) GetJSON200() *StrategyBacktest {
-	return r.JSON200
-}
-
-// GetJSON400 returns the response for an HTTP 400 `application/json` response
-func (r BacktestStrategyDraftResponse) GetJSON400() *BadRequest {
-	return r.JSON400
-}
-
-// GetJSON401 returns the response for an HTTP 401 `application/json` response
-func (r BacktestStrategyDraftResponse) GetJSON401() *Unauthenticated {
-	return r.JSON401
-}
-
-// GetJSON403 returns the response for an HTTP 403 `application/json` response
-func (r BacktestStrategyDraftResponse) GetJSON403() *AdministratorRequired {
-	return r.JSON403
-}
-
-// GetJSON404 returns the response for an HTTP 404 `application/json` response
-func (r BacktestStrategyDraftResponse) GetJSON404() *SymbolNotFound {
-	return r.JSON404
-}
-
-// GetJSON429 returns the response for an HTTP 429 `application/json` response
-func (r BacktestStrategyDraftResponse) GetJSON429() *BacktestBusy {
-	return r.JSON429
-}
-
-// GetJSON500 returns the response for an HTTP 500 `application/json` response
-func (r BacktestStrategyDraftResponse) GetJSON500() *InternalError {
-	return r.JSON500
-}
-
-// GetJSON503 returns the response for an HTTP 503 `application/json` response
-func (r BacktestStrategyDraftResponse) GetJSON503() *BacktestTooHeavy {
-	return r.JSON503
-}
-
-// GetBody returns the raw response body bytes
-func (r BacktestStrategyDraftResponse) GetBody() []byte {
-	return r.Body
-}
-
-// Status returns HTTPResponse.Status
-func (r BacktestStrategyDraftResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r BacktestStrategyDraftResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r BacktestStrategyDraftResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-// GetStrategyCatalogResponse401Headers the declared response headers of an HTTP 401 response for GetStrategyCatalog
-type GetStrategyCatalogResponse401Headers struct {
-	XRequestID string
-}
-
-// GetStrategyCatalogResponse500Headers the declared response headers of an HTTP 500 response for GetStrategyCatalog
-type GetStrategyCatalogResponse500Headers struct {
-	XRequestID string
-}
-
 type GetStrategyCatalogResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -7513,10 +6919,6 @@ type GetStrategyCatalogResponse struct {
 	JSON403 *AdministratorRequired
 	// JSON500 the response for an HTTP 500 `application/json` response
 	JSON500 *InternalError
-	// Headers401 the parsed response headers for an HTTP 401 response
-	Headers401 *GetStrategyCatalogResponse401Headers
-	// Headers500 the parsed response headers for an HTTP 500 response
-	Headers500 *GetStrategyCatalogResponse500Headers
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
@@ -7568,21 +6970,6 @@ func (r GetStrategyCatalogResponse) ContentType() string {
 	return ""
 }
 
-// ValidateStrategyResponse400Headers the declared response headers of an HTTP 400 response for ValidateStrategy
-type ValidateStrategyResponse400Headers struct {
-	XRequestID string
-}
-
-// ValidateStrategyResponse401Headers the declared response headers of an HTTP 401 response for ValidateStrategy
-type ValidateStrategyResponse401Headers struct {
-	XRequestID string
-}
-
-// ValidateStrategyResponse500Headers the declared response headers of an HTTP 500 response for ValidateStrategy
-type ValidateStrategyResponse500Headers struct {
-	XRequestID string
-}
-
 type ValidateStrategyResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -7596,12 +6983,6 @@ type ValidateStrategyResponse struct {
 	JSON403 *AdministratorRequired
 	// JSON500 the response for an HTTP 500 `application/json` response
 	JSON500 *InternalError
-	// Headers400 the parsed response headers for an HTTP 400 response
-	Headers400 *ValidateStrategyResponse400Headers
-	// Headers401 the parsed response headers for an HTTP 401 response
-	Headers401 *ValidateStrategyResponse401Headers
-	// Headers500 the parsed response headers for an HTTP 500 response
-	Headers500 *ValidateStrategyResponse500Headers
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
@@ -7658,16 +7039,6 @@ func (r ValidateStrategyResponse) ContentType() string {
 	return ""
 }
 
-// ListUsersResponse401Headers the declared response headers of an HTTP 401 response for ListUsers
-type ListUsersResponse401Headers struct {
-	XRequestID string
-}
-
-// ListUsersResponse500Headers the declared response headers of an HTTP 500 response for ListUsers
-type ListUsersResponse500Headers struct {
-	XRequestID string
-}
-
 type ListUsersResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -7679,10 +7050,6 @@ type ListUsersResponse struct {
 	JSON403 *AdministratorRequired
 	// JSON500 the response for an HTTP 500 `application/json` response
 	JSON500 *InternalError
-	// Headers401 the parsed response headers for an HTTP 401 response
-	Headers401 *ListUsersResponse401Headers
-	// Headers500 the parsed response headers for an HTTP 500 response
-	Headers500 *ListUsersResponse500Headers
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
@@ -7734,16 +7101,6 @@ func (r ListUsersResponse) ContentType() string {
 	return ""
 }
 
-// DeleteUserResponse401Headers the declared response headers of an HTTP 401 response for DeleteUser
-type DeleteUserResponse401Headers struct {
-	XRequestID string
-}
-
-// DeleteUserResponse500Headers the declared response headers of an HTTP 500 response for DeleteUser
-type DeleteUserResponse500Headers struct {
-	XRequestID string
-}
-
 type DeleteUserResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -7757,10 +7114,6 @@ type DeleteUserResponse struct {
 	JSON409 *AdministratorProtected
 	// JSON500 the response for an HTTP 500 `application/json` response
 	JSON500 *InternalError
-	// Headers401 the parsed response headers for an HTTP 401 response
-	Headers401 *DeleteUserResponse401Headers
-	// Headers500 the parsed response headers for an HTTP 500 response
-	Headers500 *DeleteUserResponse500Headers
 }
 
 // GetJSON401 returns the response for an HTTP 401 `application/json` response
@@ -7817,16 +7170,6 @@ func (r DeleteUserResponse) ContentType() string {
 	return ""
 }
 
-// UpdateUserResponse401Headers the declared response headers of an HTTP 401 response for UpdateUser
-type UpdateUserResponse401Headers struct {
-	XRequestID string
-}
-
-// UpdateUserResponse500Headers the declared response headers of an HTTP 500 response for UpdateUser
-type UpdateUserResponse500Headers struct {
-	XRequestID string
-}
-
 type UpdateUserResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -7840,10 +7183,6 @@ type UpdateUserResponse struct {
 	JSON409 *AdministratorProtected
 	// JSON500 the response for an HTTP 500 `application/json` response
 	JSON500 *InternalError
-	// Headers401 the parsed response headers for an HTTP 401 response
-	Headers401 *UpdateUserResponse401Headers
-	// Headers500 the parsed response headers for an HTTP 500 response
-	Headers500 *UpdateUserResponse500Headers
 }
 
 // GetJSON401 returns the response for an HTTP 401 `application/json` response
@@ -7900,21 +7239,6 @@ func (r UpdateUserResponse) ContentType() string {
 	return ""
 }
 
-// DeletePriceAlertResponse401Headers the declared response headers of an HTTP 401 response for DeletePriceAlert
-type DeletePriceAlertResponse401Headers struct {
-	XRequestID string
-}
-
-// DeletePriceAlertResponse403Headers the declared response headers of an HTTP 403 response for DeletePriceAlert
-type DeletePriceAlertResponse403Headers struct {
-	XRequestID string
-}
-
-// DeletePriceAlertResponse500Headers the declared response headers of an HTTP 500 response for DeletePriceAlert
-type DeletePriceAlertResponse500Headers struct {
-	XRequestID string
-}
-
 type DeletePriceAlertResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -7926,12 +7250,6 @@ type DeletePriceAlertResponse struct {
 	JSON404 *AlertNotFound
 	// JSON500 the response for an HTTP 500 `application/json` response
 	JSON500 *InternalError
-	// Headers401 the parsed response headers for an HTTP 401 response
-	Headers401 *DeletePriceAlertResponse401Headers
-	// Headers403 the parsed response headers for an HTTP 403 response
-	Headers403 *DeletePriceAlertResponse403Headers
-	// Headers500 the parsed response headers for an HTTP 500 response
-	Headers500 *DeletePriceAlertResponse500Headers
 }
 
 // GetJSON401 returns the response for an HTTP 401 `application/json` response
@@ -7983,26 +7301,6 @@ func (r DeletePriceAlertResponse) ContentType() string {
 	return ""
 }
 
-// UpdatePriceAlertResponse400Headers the declared response headers of an HTTP 400 response for UpdatePriceAlert
-type UpdatePriceAlertResponse400Headers struct {
-	XRequestID string
-}
-
-// UpdatePriceAlertResponse401Headers the declared response headers of an HTTP 401 response for UpdatePriceAlert
-type UpdatePriceAlertResponse401Headers struct {
-	XRequestID string
-}
-
-// UpdatePriceAlertResponse403Headers the declared response headers of an HTTP 403 response for UpdatePriceAlert
-type UpdatePriceAlertResponse403Headers struct {
-	XRequestID string
-}
-
-// UpdatePriceAlertResponse500Headers the declared response headers of an HTTP 500 response for UpdatePriceAlert
-type UpdatePriceAlertResponse500Headers struct {
-	XRequestID string
-}
-
 type UpdatePriceAlertResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -8020,14 +7318,6 @@ type UpdatePriceAlertResponse struct {
 	JSON409 *AlertConflict
 	// JSON500 the response for an HTTP 500 `application/json` response
 	JSON500 *InternalError
-	// Headers400 the parsed response headers for an HTTP 400 response
-	Headers400 *UpdatePriceAlertResponse400Headers
-	// Headers401 the parsed response headers for an HTTP 401 response
-	Headers401 *UpdatePriceAlertResponse401Headers
-	// Headers403 the parsed response headers for an HTTP 403 response
-	Headers403 *UpdatePriceAlertResponse403Headers
-	// Headers500 the parsed response headers for an HTTP 500 response
-	Headers500 *UpdatePriceAlertResponse500Headers
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
@@ -8094,51 +7384,6 @@ func (r UpdatePriceAlertResponse) ContentType() string {
 	return ""
 }
 
-// AnalyzeInstrumentResponse200Headers the declared response headers of an HTTP 200 response for AnalyzeInstrument
-type AnalyzeInstrumentResponse200Headers struct {
-	XRequestID string
-}
-
-// AnalyzeInstrumentResponse400Headers the declared response headers of an HTTP 400 response for AnalyzeInstrument
-type AnalyzeInstrumentResponse400Headers struct {
-	XRequestID string
-}
-
-// AnalyzeInstrumentResponse401Headers the declared response headers of an HTTP 401 response for AnalyzeInstrument
-type AnalyzeInstrumentResponse401Headers struct {
-	XRequestID string
-}
-
-// AnalyzeInstrumentResponse403Headers the declared response headers of an HTTP 403 response for AnalyzeInstrument
-type AnalyzeInstrumentResponse403Headers struct {
-	XRequestID string
-}
-
-// AnalyzeInstrumentResponse404Headers the declared response headers of an HTTP 404 response for AnalyzeInstrument
-type AnalyzeInstrumentResponse404Headers struct {
-	XRequestID string
-}
-
-// AnalyzeInstrumentResponse409Headers the declared response headers of an HTTP 409 response for AnalyzeInstrument
-type AnalyzeInstrumentResponse409Headers struct {
-	XRequestID string
-}
-
-// AnalyzeInstrumentResponse422Headers the declared response headers of an HTTP 422 response for AnalyzeInstrument
-type AnalyzeInstrumentResponse422Headers struct {
-	XRequestID string
-}
-
-// AnalyzeInstrumentResponse500Headers the declared response headers of an HTTP 500 response for AnalyzeInstrument
-type AnalyzeInstrumentResponse500Headers struct {
-	XRequestID string
-}
-
-// AnalyzeInstrumentResponse503Headers the declared response headers of an HTTP 503 response for AnalyzeInstrument
-type AnalyzeInstrumentResponse503Headers struct {
-	XRequestID string
-}
-
 type AnalyzeInstrumentResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -8160,24 +7405,6 @@ type AnalyzeInstrumentResponse struct {
 	JSON500 *InternalError
 	// JSON503 the response for an HTTP 503 `application/json` response
 	JSON503 *AnalysisUnavailable
-	// Headers200 the parsed response headers for an HTTP 200 response
-	Headers200 *AnalyzeInstrumentResponse200Headers
-	// Headers400 the parsed response headers for an HTTP 400 response
-	Headers400 *AnalyzeInstrumentResponse400Headers
-	// Headers401 the parsed response headers for an HTTP 401 response
-	Headers401 *AnalyzeInstrumentResponse401Headers
-	// Headers403 the parsed response headers for an HTTP 403 response
-	Headers403 *AnalyzeInstrumentResponse403Headers
-	// Headers404 the parsed response headers for an HTTP 404 response
-	Headers404 *AnalyzeInstrumentResponse404Headers
-	// Headers409 the parsed response headers for an HTTP 409 response
-	Headers409 *AnalyzeInstrumentResponse409Headers
-	// Headers422 the parsed response headers for an HTTP 422 response
-	Headers422 *AnalyzeInstrumentResponse422Headers
-	// Headers500 the parsed response headers for an HTTP 500 response
-	Headers500 *AnalyzeInstrumentResponse500Headers
-	// Headers503 the parsed response headers for an HTTP 503 response
-	Headers503 *AnalyzeInstrumentResponse503Headers
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
@@ -8254,41 +7481,6 @@ func (r AnalyzeInstrumentResponse) ContentType() string {
 	return ""
 }
 
-// AnalyzeMarketResponse200Headers the declared response headers of an HTTP 200 response for AnalyzeMarket
-type AnalyzeMarketResponse200Headers struct {
-	XRequestID string
-}
-
-// AnalyzeMarketResponse400Headers the declared response headers of an HTTP 400 response for AnalyzeMarket
-type AnalyzeMarketResponse400Headers struct {
-	XRequestID string
-}
-
-// AnalyzeMarketResponse401Headers the declared response headers of an HTTP 401 response for AnalyzeMarket
-type AnalyzeMarketResponse401Headers struct {
-	XRequestID string
-}
-
-// AnalyzeMarketResponse403Headers the declared response headers of an HTTP 403 response for AnalyzeMarket
-type AnalyzeMarketResponse403Headers struct {
-	XRequestID string
-}
-
-// AnalyzeMarketResponse422Headers the declared response headers of an HTTP 422 response for AnalyzeMarket
-type AnalyzeMarketResponse422Headers struct {
-	XRequestID string
-}
-
-// AnalyzeMarketResponse500Headers the declared response headers of an HTTP 500 response for AnalyzeMarket
-type AnalyzeMarketResponse500Headers struct {
-	XRequestID string
-}
-
-// AnalyzeMarketResponse503Headers the declared response headers of an HTTP 503 response for AnalyzeMarket
-type AnalyzeMarketResponse503Headers struct {
-	XRequestID string
-}
-
 type AnalyzeMarketResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -8306,20 +7498,6 @@ type AnalyzeMarketResponse struct {
 	JSON500 *InternalError
 	// JSON503 the response for an HTTP 503 `application/json` response
 	JSON503 *AnalysisUnavailable
-	// Headers200 the parsed response headers for an HTTP 200 response
-	Headers200 *AnalyzeMarketResponse200Headers
-	// Headers400 the parsed response headers for an HTTP 400 response
-	Headers400 *AnalyzeMarketResponse400Headers
-	// Headers401 the parsed response headers for an HTTP 401 response
-	Headers401 *AnalyzeMarketResponse401Headers
-	// Headers403 the parsed response headers for an HTTP 403 response
-	Headers403 *AnalyzeMarketResponse403Headers
-	// Headers422 the parsed response headers for an HTTP 422 response
-	Headers422 *AnalyzeMarketResponse422Headers
-	// Headers500 the parsed response headers for an HTTP 500 response
-	Headers500 *AnalyzeMarketResponse500Headers
-	// Headers503 the parsed response headers for an HTTP 503 response
-	Headers503 *AnalyzeMarketResponse503Headers
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
@@ -8386,21 +7564,6 @@ func (r AnalyzeMarketResponse) ContentType() string {
 	return ""
 }
 
-// DeleteSessionResponse401Headers the declared response headers of an HTTP 401 response for DeleteSession
-type DeleteSessionResponse401Headers struct {
-	XRequestID string
-}
-
-// DeleteSessionResponse403Headers the declared response headers of an HTTP 403 response for DeleteSession
-type DeleteSessionResponse403Headers struct {
-	XRequestID string
-}
-
-// DeleteSessionResponse500Headers the declared response headers of an HTTP 500 response for DeleteSession
-type DeleteSessionResponse500Headers struct {
-	XRequestID string
-}
-
 type DeleteSessionResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -8410,12 +7573,6 @@ type DeleteSessionResponse struct {
 	JSON403 *SessionRequired
 	// JSON500 the response for an HTTP 500 `application/json` response
 	JSON500 *InternalError
-	// Headers401 the parsed response headers for an HTTP 401 response
-	Headers401 *DeleteSessionResponse401Headers
-	// Headers403 the parsed response headers for an HTTP 403 response
-	Headers403 *DeleteSessionResponse403Headers
-	// Headers500 the parsed response headers for an HTTP 500 response
-	Headers500 *DeleteSessionResponse500Headers
 }
 
 // GetJSON401 returns the response for an HTTP 401 `application/json` response
@@ -8462,26 +7619,6 @@ func (r DeleteSessionResponse) ContentType() string {
 	return ""
 }
 
-// CreateSessionResponse201Headers the declared response headers of an HTTP 201 response for CreateSession
-type CreateSessionResponse201Headers struct {
-	XRequestID string
-}
-
-// CreateSessionResponse401Headers the declared response headers of an HTTP 401 response for CreateSession
-type CreateSessionResponse401Headers struct {
-	XRequestID string
-}
-
-// CreateSessionResponse403Headers the declared response headers of an HTTP 403 response for CreateSession
-type CreateSessionResponse403Headers struct {
-	XRequestID string
-}
-
-// CreateSessionResponse500Headers the declared response headers of an HTTP 500 response for CreateSession
-type CreateSessionResponse500Headers struct {
-	XRequestID string
-}
-
 type CreateSessionResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -8493,14 +7630,6 @@ type CreateSessionResponse struct {
 	JSON403 *AccessDenied
 	// JSON500 the response for an HTTP 500 `application/json` response
 	JSON500 *InternalError
-	// Headers201 the parsed response headers for an HTTP 201 response
-	Headers201 *CreateSessionResponse201Headers
-	// Headers401 the parsed response headers for an HTTP 401 response
-	Headers401 *CreateSessionResponse401Headers
-	// Headers403 the parsed response headers for an HTTP 403 response
-	Headers403 *CreateSessionResponse403Headers
-	// Headers500 the parsed response headers for an HTTP 500 response
-	Headers500 *CreateSessionResponse500Headers
 }
 
 // GetJSON201 returns the response for an HTTP 201 `application/json` response
@@ -8552,21 +7681,6 @@ func (r CreateSessionResponse) ContentType() string {
 	return ""
 }
 
-// ListChartIndicatorsResponse401Headers the declared response headers of an HTTP 401 response for ListChartIndicators
-type ListChartIndicatorsResponse401Headers struct {
-	XRequestID string
-}
-
-// ListChartIndicatorsResponse403Headers the declared response headers of an HTTP 403 response for ListChartIndicators
-type ListChartIndicatorsResponse403Headers struct {
-	XRequestID string
-}
-
-// ListChartIndicatorsResponse500Headers the declared response headers of an HTTP 500 response for ListChartIndicators
-type ListChartIndicatorsResponse500Headers struct {
-	XRequestID string
-}
-
 type ListChartIndicatorsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -8578,12 +7692,6 @@ type ListChartIndicatorsResponse struct {
 	JSON403 *AccessDenied
 	// JSON500 the response for an HTTP 500 `application/json` response
 	JSON500 *InternalError
-	// Headers401 the parsed response headers for an HTTP 401 response
-	Headers401 *ListChartIndicatorsResponse401Headers
-	// Headers403 the parsed response headers for an HTTP 403 response
-	Headers403 *ListChartIndicatorsResponse403Headers
-	// Headers500 the parsed response headers for an HTTP 500 response
-	Headers500 *ListChartIndicatorsResponse500Headers
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
@@ -8635,21 +7743,6 @@ func (r ListChartIndicatorsResponse) ContentType() string {
 	return ""
 }
 
-// ListFavoritesResponse401Headers the declared response headers of an HTTP 401 response for ListFavorites
-type ListFavoritesResponse401Headers struct {
-	XRequestID string
-}
-
-// ListFavoritesResponse403Headers the declared response headers of an HTTP 403 response for ListFavorites
-type ListFavoritesResponse403Headers struct {
-	XRequestID string
-}
-
-// ListFavoritesResponse500Headers the declared response headers of an HTTP 500 response for ListFavorites
-type ListFavoritesResponse500Headers struct {
-	XRequestID string
-}
-
 type ListFavoritesResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -8661,12 +7754,6 @@ type ListFavoritesResponse struct {
 	JSON403 *AccessDenied
 	// JSON500 the response for an HTTP 500 `application/json` response
 	JSON500 *InternalError
-	// Headers401 the parsed response headers for an HTTP 401 response
-	Headers401 *ListFavoritesResponse401Headers
-	// Headers403 the parsed response headers for an HTTP 403 response
-	Headers403 *ListFavoritesResponse403Headers
-	// Headers500 the parsed response headers for an HTTP 500 response
-	Headers500 *ListFavoritesResponse500Headers
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
@@ -8718,146 +7805,6 @@ func (r ListFavoritesResponse) ContentType() string {
 	return ""
 }
 
-// AnalyzeFavoritesResponse400Headers the declared response headers of an HTTP 400 response for AnalyzeFavorites
-type AnalyzeFavoritesResponse400Headers struct {
-	XRequestID string
-}
-
-// AnalyzeFavoritesResponse401Headers the declared response headers of an HTTP 401 response for AnalyzeFavorites
-type AnalyzeFavoritesResponse401Headers struct {
-	XRequestID string
-}
-
-// AnalyzeFavoritesResponse403Headers the declared response headers of an HTTP 403 response for AnalyzeFavorites
-type AnalyzeFavoritesResponse403Headers struct {
-	XRequestID string
-}
-
-// AnalyzeFavoritesResponse422Headers the declared response headers of an HTTP 422 response for AnalyzeFavorites
-type AnalyzeFavoritesResponse422Headers struct {
-	XRequestID string
-}
-
-// AnalyzeFavoritesResponse500Headers the declared response headers of an HTTP 500 response for AnalyzeFavorites
-type AnalyzeFavoritesResponse500Headers struct {
-	XRequestID string
-}
-
-// AnalyzeFavoritesResponse503Headers the declared response headers of an HTTP 503 response for AnalyzeFavorites
-type AnalyzeFavoritesResponse503Headers struct {
-	XRequestID string
-}
-
-type AnalyzeFavoritesResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	// JSON200 the response for an HTTP 200 `application/json` response
-	JSON200 *MarketAnalysisResponse
-	// JSON400 the response for an HTTP 400 `application/json` response
-	JSON400 *BadRequest
-	// JSON401 the response for an HTTP 401 `application/json` response
-	JSON401 *Unauthenticated
-	// JSON403 the response for an HTTP 403 `application/json` response
-	JSON403 *AccessDenied
-	// JSON422 the response for an HTTP 422 `application/json` response
-	JSON422 *UnprocessableAnalysis
-	// JSON500 the response for an HTTP 500 `application/json` response
-	JSON500 *InternalError
-	// JSON503 the response for an HTTP 503 `application/json` response
-	JSON503 *AnalysisUnavailable
-	// Headers400 the parsed response headers for an HTTP 400 response
-	Headers400 *AnalyzeFavoritesResponse400Headers
-	// Headers401 the parsed response headers for an HTTP 401 response
-	Headers401 *AnalyzeFavoritesResponse401Headers
-	// Headers403 the parsed response headers for an HTTP 403 response
-	Headers403 *AnalyzeFavoritesResponse403Headers
-	// Headers422 the parsed response headers for an HTTP 422 response
-	Headers422 *AnalyzeFavoritesResponse422Headers
-	// Headers500 the parsed response headers for an HTTP 500 response
-	Headers500 *AnalyzeFavoritesResponse500Headers
-	// Headers503 the parsed response headers for an HTTP 503 response
-	Headers503 *AnalyzeFavoritesResponse503Headers
-}
-
-// GetJSON200 returns the response for an HTTP 200 `application/json` response
-func (r AnalyzeFavoritesResponse) GetJSON200() *MarketAnalysisResponse {
-	return r.JSON200
-}
-
-// GetJSON400 returns the response for an HTTP 400 `application/json` response
-func (r AnalyzeFavoritesResponse) GetJSON400() *BadRequest {
-	return r.JSON400
-}
-
-// GetJSON401 returns the response for an HTTP 401 `application/json` response
-func (r AnalyzeFavoritesResponse) GetJSON401() *Unauthenticated {
-	return r.JSON401
-}
-
-// GetJSON403 returns the response for an HTTP 403 `application/json` response
-func (r AnalyzeFavoritesResponse) GetJSON403() *AccessDenied {
-	return r.JSON403
-}
-
-// GetJSON422 returns the response for an HTTP 422 `application/json` response
-func (r AnalyzeFavoritesResponse) GetJSON422() *UnprocessableAnalysis {
-	return r.JSON422
-}
-
-// GetJSON500 returns the response for an HTTP 500 `application/json` response
-func (r AnalyzeFavoritesResponse) GetJSON500() *InternalError {
-	return r.JSON500
-}
-
-// GetJSON503 returns the response for an HTTP 503 `application/json` response
-func (r AnalyzeFavoritesResponse) GetJSON503() *AnalysisUnavailable {
-	return r.JSON503
-}
-
-// GetBody returns the raw response body bytes
-func (r AnalyzeFavoritesResponse) GetBody() []byte {
-	return r.Body
-}
-
-// Status returns HTTPResponse.Status
-func (r AnalyzeFavoritesResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r AnalyzeFavoritesResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r AnalyzeFavoritesResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-// RemoveFavoriteResponse401Headers the declared response headers of an HTTP 401 response for RemoveFavorite
-type RemoveFavoriteResponse401Headers struct {
-	XRequestID string
-}
-
-// RemoveFavoriteResponse403Headers the declared response headers of an HTTP 403 response for RemoveFavorite
-type RemoveFavoriteResponse403Headers struct {
-	XRequestID string
-}
-
-// RemoveFavoriteResponse500Headers the declared response headers of an HTTP 500 response for RemoveFavorite
-type RemoveFavoriteResponse500Headers struct {
-	XRequestID string
-}
-
 type RemoveFavoriteResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -8871,12 +7818,6 @@ type RemoveFavoriteResponse struct {
 	JSON409 *FavoriteConflict
 	// JSON500 the response for an HTTP 500 `application/json` response
 	JSON500 *InternalError
-	// Headers401 the parsed response headers for an HTTP 401 response
-	Headers401 *RemoveFavoriteResponse401Headers
-	// Headers403 the parsed response headers for an HTTP 403 response
-	Headers403 *RemoveFavoriteResponse403Headers
-	// Headers500 the parsed response headers for an HTTP 500 response
-	Headers500 *RemoveFavoriteResponse500Headers
 }
 
 // GetJSON401 returns the response for an HTTP 401 `application/json` response
@@ -8933,26 +7874,6 @@ func (r RemoveFavoriteResponse) ContentType() string {
 	return ""
 }
 
-// AddFavoriteResponse401Headers the declared response headers of an HTTP 401 response for AddFavorite
-type AddFavoriteResponse401Headers struct {
-	XRequestID string
-}
-
-// AddFavoriteResponse403Headers the declared response headers of an HTTP 403 response for AddFavorite
-type AddFavoriteResponse403Headers struct {
-	XRequestID string
-}
-
-// AddFavoriteResponse404Headers the declared response headers of an HTTP 404 response for AddFavorite
-type AddFavoriteResponse404Headers struct {
-	XRequestID string
-}
-
-// AddFavoriteResponse500Headers the declared response headers of an HTTP 500 response for AddFavorite
-type AddFavoriteResponse500Headers struct {
-	XRequestID string
-}
-
 type AddFavoriteResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -8966,14 +7887,6 @@ type AddFavoriteResponse struct {
 	JSON404 *SymbolNotFound
 	// JSON500 the response for an HTTP 500 `application/json` response
 	JSON500 *InternalError
-	// Headers401 the parsed response headers for an HTTP 401 response
-	Headers401 *AddFavoriteResponse401Headers
-	// Headers403 the parsed response headers for an HTTP 403 response
-	Headers403 *AddFavoriteResponse403Headers
-	// Headers404 the parsed response headers for an HTTP 404 response
-	Headers404 *AddFavoriteResponse404Headers
-	// Headers500 the parsed response headers for an HTTP 500 response
-	Headers500 *AddFavoriteResponse500Headers
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
@@ -9030,21 +7943,6 @@ func (r AddFavoriteResponse) ContentType() string {
 	return ""
 }
 
-// ListInstrumentsResponse401Headers the declared response headers of an HTTP 401 response for ListInstruments
-type ListInstrumentsResponse401Headers struct {
-	XRequestID string
-}
-
-// ListInstrumentsResponse403Headers the declared response headers of an HTTP 403 response for ListInstruments
-type ListInstrumentsResponse403Headers struct {
-	XRequestID string
-}
-
-// ListInstrumentsResponse500Headers the declared response headers of an HTTP 500 response for ListInstruments
-type ListInstrumentsResponse500Headers struct {
-	XRequestID string
-}
-
 type ListInstrumentsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -9056,12 +7954,6 @@ type ListInstrumentsResponse struct {
 	JSON403 *AccessDenied
 	// JSON500 the response for an HTTP 500 `application/json` response
 	JSON500 *InternalError
-	// Headers401 the parsed response headers for an HTTP 401 response
-	Headers401 *ListInstrumentsResponse401Headers
-	// Headers403 the parsed response headers for an HTTP 403 response
-	Headers403 *ListInstrumentsResponse403Headers
-	// Headers500 the parsed response headers for an HTTP 500 response
-	Headers500 *ListInstrumentsResponse500Headers
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
@@ -9113,21 +8005,6 @@ func (r ListInstrumentsResponse) ContentType() string {
 	return ""
 }
 
-// ListPriceAlertsResponse401Headers the declared response headers of an HTTP 401 response for ListPriceAlerts
-type ListPriceAlertsResponse401Headers struct {
-	XRequestID string
-}
-
-// ListPriceAlertsResponse403Headers the declared response headers of an HTTP 403 response for ListPriceAlerts
-type ListPriceAlertsResponse403Headers struct {
-	XRequestID string
-}
-
-// ListPriceAlertsResponse500Headers the declared response headers of an HTTP 500 response for ListPriceAlerts
-type ListPriceAlertsResponse500Headers struct {
-	XRequestID string
-}
-
 type ListPriceAlertsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -9139,12 +8016,6 @@ type ListPriceAlertsResponse struct {
 	JSON403 *AccessDenied
 	// JSON500 the response for an HTTP 500 `application/json` response
 	JSON500 *InternalError
-	// Headers401 the parsed response headers for an HTTP 401 response
-	Headers401 *ListPriceAlertsResponse401Headers
-	// Headers403 the parsed response headers for an HTTP 403 response
-	Headers403 *ListPriceAlertsResponse403Headers
-	// Headers500 the parsed response headers for an HTTP 500 response
-	Headers500 *ListPriceAlertsResponse500Headers
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
@@ -9196,31 +8067,6 @@ func (r ListPriceAlertsResponse) ContentType() string {
 	return ""
 }
 
-// CreatePriceAlertResponse400Headers the declared response headers of an HTTP 400 response for CreatePriceAlert
-type CreatePriceAlertResponse400Headers struct {
-	XRequestID string
-}
-
-// CreatePriceAlertResponse401Headers the declared response headers of an HTTP 401 response for CreatePriceAlert
-type CreatePriceAlertResponse401Headers struct {
-	XRequestID string
-}
-
-// CreatePriceAlertResponse403Headers the declared response headers of an HTTP 403 response for CreatePriceAlert
-type CreatePriceAlertResponse403Headers struct {
-	XRequestID string
-}
-
-// CreatePriceAlertResponse404Headers the declared response headers of an HTTP 404 response for CreatePriceAlert
-type CreatePriceAlertResponse404Headers struct {
-	XRequestID string
-}
-
-// CreatePriceAlertResponse500Headers the declared response headers of an HTTP 500 response for CreatePriceAlert
-type CreatePriceAlertResponse500Headers struct {
-	XRequestID string
-}
-
 type CreatePriceAlertResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -9238,16 +8084,6 @@ type CreatePriceAlertResponse struct {
 	JSON409 *AlertConflict
 	// JSON500 the response for an HTTP 500 `application/json` response
 	JSON500 *InternalError
-	// Headers400 the parsed response headers for an HTTP 400 response
-	Headers400 *CreatePriceAlertResponse400Headers
-	// Headers401 the parsed response headers for an HTTP 401 response
-	Headers401 *CreatePriceAlertResponse401Headers
-	// Headers403 the parsed response headers for an HTTP 403 response
-	Headers403 *CreatePriceAlertResponse403Headers
-	// Headers404 the parsed response headers for an HTTP 404 response
-	Headers404 *CreatePriceAlertResponse404Headers
-	// Headers500 the parsed response headers for an HTTP 500 response
-	Headers500 *CreatePriceAlertResponse500Headers
 }
 
 // GetJSON201 returns the response for an HTTP 201 `application/json` response
@@ -9314,36 +8150,6 @@ func (r CreatePriceAlertResponse) ContentType() string {
 	return ""
 }
 
-// ListInstrumentCandlesResponse200Headers the declared response headers of an HTTP 200 response for ListInstrumentCandles
-type ListInstrumentCandlesResponse200Headers struct {
-	XRequestID string
-}
-
-// ListInstrumentCandlesResponse400Headers the declared response headers of an HTTP 400 response for ListInstrumentCandles
-type ListInstrumentCandlesResponse400Headers struct {
-	XRequestID string
-}
-
-// ListInstrumentCandlesResponse401Headers the declared response headers of an HTTP 401 response for ListInstrumentCandles
-type ListInstrumentCandlesResponse401Headers struct {
-	XRequestID string
-}
-
-// ListInstrumentCandlesResponse403Headers the declared response headers of an HTTP 403 response for ListInstrumentCandles
-type ListInstrumentCandlesResponse403Headers struct {
-	XRequestID string
-}
-
-// ListInstrumentCandlesResponse404Headers the declared response headers of an HTTP 404 response for ListInstrumentCandles
-type ListInstrumentCandlesResponse404Headers struct {
-	XRequestID string
-}
-
-// ListInstrumentCandlesResponse500Headers the declared response headers of an HTTP 500 response for ListInstrumentCandles
-type ListInstrumentCandlesResponse500Headers struct {
-	XRequestID string
-}
-
 type ListInstrumentCandlesResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -9359,18 +8165,6 @@ type ListInstrumentCandlesResponse struct {
 	JSON404 *SymbolNotFound
 	// JSON500 the response for an HTTP 500 `application/json` response
 	JSON500 *InternalError
-	// Headers200 the parsed response headers for an HTTP 200 response
-	Headers200 *ListInstrumentCandlesResponse200Headers
-	// Headers400 the parsed response headers for an HTTP 400 response
-	Headers400 *ListInstrumentCandlesResponse400Headers
-	// Headers401 the parsed response headers for an HTTP 401 response
-	Headers401 *ListInstrumentCandlesResponse401Headers
-	// Headers403 the parsed response headers for an HTTP 403 response
-	Headers403 *ListInstrumentCandlesResponse403Headers
-	// Headers404 the parsed response headers for an HTTP 404 response
-	Headers404 *ListInstrumentCandlesResponse404Headers
-	// Headers500 the parsed response headers for an HTTP 500 response
-	Headers500 *ListInstrumentCandlesResponse500Headers
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
@@ -9432,41 +8226,6 @@ func (r ListInstrumentCandlesResponse) ContentType() string {
 	return ""
 }
 
-// GetInstrumentGridLimitsResponse200Headers the declared response headers of an HTTP 200 response for GetInstrumentGridLimits
-type GetInstrumentGridLimitsResponse200Headers struct {
-	XRequestID string
-}
-
-// GetInstrumentGridLimitsResponse400Headers the declared response headers of an HTTP 400 response for GetInstrumentGridLimits
-type GetInstrumentGridLimitsResponse400Headers struct {
-	XRequestID string
-}
-
-// GetInstrumentGridLimitsResponse401Headers the declared response headers of an HTTP 401 response for GetInstrumentGridLimits
-type GetInstrumentGridLimitsResponse401Headers struct {
-	XRequestID string
-}
-
-// GetInstrumentGridLimitsResponse403Headers the declared response headers of an HTTP 403 response for GetInstrumentGridLimits
-type GetInstrumentGridLimitsResponse403Headers struct {
-	XRequestID string
-}
-
-// GetInstrumentGridLimitsResponse404Headers the declared response headers of an HTTP 404 response for GetInstrumentGridLimits
-type GetInstrumentGridLimitsResponse404Headers struct {
-	XRequestID string
-}
-
-// GetInstrumentGridLimitsResponse500Headers the declared response headers of an HTTP 500 response for GetInstrumentGridLimits
-type GetInstrumentGridLimitsResponse500Headers struct {
-	XRequestID string
-}
-
-// GetInstrumentGridLimitsResponse503Headers the declared response headers of an HTTP 503 response for GetInstrumentGridLimits
-type GetInstrumentGridLimitsResponse503Headers struct {
-	XRequestID string
-}
-
 type GetInstrumentGridLimitsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -9484,20 +8243,6 @@ type GetInstrumentGridLimitsResponse struct {
 	JSON500 *InternalError
 	// JSON503 the response for an HTTP 503 `application/json` response
 	JSON503 *AnalysisUnavailable
-	// Headers200 the parsed response headers for an HTTP 200 response
-	Headers200 *GetInstrumentGridLimitsResponse200Headers
-	// Headers400 the parsed response headers for an HTTP 400 response
-	Headers400 *GetInstrumentGridLimitsResponse400Headers
-	// Headers401 the parsed response headers for an HTTP 401 response
-	Headers401 *GetInstrumentGridLimitsResponse401Headers
-	// Headers403 the parsed response headers for an HTTP 403 response
-	Headers403 *GetInstrumentGridLimitsResponse403Headers
-	// Headers404 the parsed response headers for an HTTP 404 response
-	Headers404 *GetInstrumentGridLimitsResponse404Headers
-	// Headers500 the parsed response headers for an HTTP 500 response
-	Headers500 *GetInstrumentGridLimitsResponse500Headers
-	// Headers503 the parsed response headers for an HTTP 503 response
-	Headers503 *GetInstrumentGridLimitsResponse503Headers
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
@@ -9564,21 +8309,6 @@ func (r GetInstrumentGridLimitsResponse) ContentType() string {
 	return ""
 }
 
-// GetCurrentUserResponse401Headers the declared response headers of an HTTP 401 response for GetCurrentUser
-type GetCurrentUserResponse401Headers struct {
-	XRequestID string
-}
-
-// GetCurrentUserResponse403Headers the declared response headers of an HTTP 403 response for GetCurrentUser
-type GetCurrentUserResponse403Headers struct {
-	XRequestID string
-}
-
-// GetCurrentUserResponse500Headers the declared response headers of an HTTP 500 response for GetCurrentUser
-type GetCurrentUserResponse500Headers struct {
-	XRequestID string
-}
-
 type GetCurrentUserResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -9590,12 +8320,6 @@ type GetCurrentUserResponse struct {
 	JSON403 *AccessDenied
 	// JSON500 the response for an HTTP 500 `application/json` response
 	JSON500 *InternalError
-	// Headers401 the parsed response headers for an HTTP 401 response
-	Headers401 *GetCurrentUserResponse401Headers
-	// Headers403 the parsed response headers for an HTTP 403 response
-	Headers403 *GetCurrentUserResponse403Headers
-	// Headers500 the parsed response headers for an HTTP 500 response
-	Headers500 *GetCurrentUserResponse500Headers
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
@@ -9647,18 +8371,11 @@ func (r GetCurrentUserResponse) ContentType() string {
 	return ""
 }
 
-// GetLivenessResponse200Headers the declared response headers of an HTTP 200 response for GetLiveness
-type GetLivenessResponse200Headers struct {
-	XRequestID string
-}
-
 type GetLivenessResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	// JSON200 the response for an HTTP 200 `application/json` response
 	JSON200 *LivenessResponse
-	// Headers200 the parsed response headers for an HTTP 200 response
-	Headers200 *GetLivenessResponse200Headers
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
@@ -9695,16 +8412,6 @@ func (r GetLivenessResponse) ContentType() string {
 	return ""
 }
 
-// GetReadinessResponse200Headers the declared response headers of an HTTP 200 response for GetReadiness
-type GetReadinessResponse200Headers struct {
-	XRequestID string
-}
-
-// GetReadinessResponse503Headers the declared response headers of an HTTP 503 response for GetReadiness
-type GetReadinessResponse503Headers struct {
-	XRequestID string
-}
-
 type GetReadinessResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -9712,10 +8419,6 @@ type GetReadinessResponse struct {
 	JSON200 *ReadinessResponse
 	// JSON503 the response for an HTTP 503 `application/json` response
 	JSON503 *ReadinessResponse
-	// Headers200 the parsed response headers for an HTTP 200 response
-	Headers200 *GetReadinessResponse200Headers
-	// Headers503 the parsed response headers for an HTTP 503 response
-	Headers503 *GetReadinessResponse503Headers
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
@@ -9979,6 +8682,19 @@ func (c *ClientWithResponses) DeleteStrategyWithResponse(ctx context.Context, st
 	return ParseDeleteStrategyResponse(rsp)
 }
 
+// GetStrategyWithResponse Show a strategy
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/admin/strategies/{strategy_id} (the `GetStrategy` operationId).
+func (c *ClientWithResponses) GetStrategyWithResponse(ctx context.Context, strategyId StrategyID, reqEditors ...RequestEditorFn) (*GetStrategyResponse, error) {
+	rsp, err := c.GetStrategy(ctx, strategyId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetStrategyResponse(rsp)
+}
+
 // SetStrategyEnabledWithBodyWithResponse Turn a strategy on or off
 //
 // Enabling starts the strategy afresh, without trades, and needs coins chosen, all active; disabling forgets its trades.
@@ -10039,9 +8755,11 @@ func (c *ClientWithResponses) UpdateStrategyWithResponse(ctx context.Context, st
 	return ParseUpdateStrategyResponse(rsp)
 }
 
-// BacktestStrategyWithResponse Backtest a saved strategy on one coin
+// BacktestStrategyWithBodyWithResponse Backtest a strategy on one coin
 //
-// Evaluates the saved strategy, enabled or not, at the close of every
+// Backtests a saved strategy, enabled or not, or an unsaved one, whose
+// rules are checked as a save checks them. It evaluates the strategy at
+// the close of every
 // stored candle of the finest interval its rules read, and replays its
 // trades exactly as live signals trade, starting without a trade. Any active coin can be
 // backtested; coins read through `of` must be in the administrator's
@@ -10064,62 +8782,65 @@ func (c *ClientWithResponses) UpdateStrategyWithResponse(ctx context.Context, st
 // falls; funding, leverage, and liquidation are not modeled, and it has
 // no baselines. A backtest that does not finish
 // within its time limit fails with `backtest_too_heavy`. At most two
-// backtests, saved or not, run at once; another fails at once with
-// `backtest_busy`.
+// backtests run at once; another fails at once with `backtest_busy`.
 //
 // A signal trades nothing: its backtest has no trades and no baselines,
 // and `signal` lists its entry signals and how the price moved after
 // them.
 //
-// Returns a wrapper object for the known response body format(s).
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
-// Corresponds with GET /api/v1/admin/strategies/{strategy_id}/backtest (the `BacktestStrategy` operationId).
-func (c *ClientWithResponses) BacktestStrategyWithResponse(ctx context.Context, strategyId StrategyID, params *BacktestStrategyParams, reqEditors ...RequestEditorFn) (*BacktestStrategyResponse, error) {
-	rsp, err := c.BacktestStrategy(ctx, strategyId, params, reqEditors...)
+// Corresponds with POST /api/v1/admin/strategy-backtests (the `BacktestStrategy` operationId).
+func (c *ClientWithResponses) BacktestStrategyWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*BacktestStrategyResponse, error) {
+	rsp, err := c.BacktestStrategyWithBody(ctx, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
 	return ParseBacktestStrategyResponse(rsp)
 }
 
-// BacktestStrategyDraftWithBodyWithResponse Backtest an unsaved strategy on one coin
+// BacktestStrategyWithResponse Backtest a strategy on one coin
 //
-// Backtests the strategy or signal of the body without saving it,
-// exactly as `GET /api/v1/admin/strategies/{strategy_id}/backtest`
-// backtests a saved one with the same rules. The rules and trading
-// settings are checked as a save checks them and fail with
-// `invalid_argument`. At most two backtests, saved or not, run at once;
-// another fails at once with `backtest_busy`.
+// Backtests a saved strategy, enabled or not, or an unsaved one, whose
+// rules are checked as a save checks them. It evaluates the strategy at
+// the close of every
+// stored candle of the finest interval its rules read, and replays its
+// trades exactly as live signals trade, starting without a trade. Any active coin can be
+// backtested; coins read through `of` must be in the administrator's
+// favorites, otherwise their values are unknown. Only the stored closed
+// history is replayed (up to 20,000 candles; the administrator loads
+// deeper history with `POST /api/v1/admin/candle-history-loads`,
+// backtests never load it); when older candles may be missing, candles
+// before the full indicator warm-up are not evaluated.
 //
-// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+// Every buy spends the same amount at the open of the candle after its
+// signal. A take profit or stop loss sells every buy of the trade at its
+// price on the candle that reaches it, or at that candle's open when it
+// opens past it; an exit rule sells at the open of the candle after its
+// signal. Both sides pay `fee`. A trade still open when the history
+// ends is valued at the last close. `from` and `to` limit the evaluated
+// candles by open time; older candles still warm the indicators up. Two baselines
+// cover the same evaluated period of a long strategy: buying and
+// holding, and buying the same amount at every candle (DCA). A short
+// strategy sells at entry and buys back at exit, gaining as the price
+// falls; funding, leverage, and liquidation are not modeled, and it has
+// no baselines. A backtest that does not finish
+// within its time limit fails with `backtest_too_heavy`. At most two
+// backtests run at once; another fails at once with `backtest_busy`.
 //
-// Corresponds with POST /api/v1/admin/strategy-backtests (the `BacktestStrategyDraft` operationId).
-func (c *ClientWithResponses) BacktestStrategyDraftWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*BacktestStrategyDraftResponse, error) {
-	rsp, err := c.BacktestStrategyDraftWithBody(ctx, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseBacktestStrategyDraftResponse(rsp)
-}
-
-// BacktestStrategyDraftWithResponse Backtest an unsaved strategy on one coin
-//
-// Backtests the strategy or signal of the body without saving it,
-// exactly as `GET /api/v1/admin/strategies/{strategy_id}/backtest`
-// backtests a saved one with the same rules. The rules and trading
-// settings are checked as a save checks them and fail with
-// `invalid_argument`. At most two backtests, saved or not, run at once;
-// another fails at once with `backtest_busy`.
+// A signal trades nothing: its backtest has no trades and no baselines,
+// and `signal` lists its entry signals and how the price moved after
+// them.
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
-// Corresponds with POST /api/v1/admin/strategy-backtests (the `BacktestStrategyDraft` operationId).
-func (c *ClientWithResponses) BacktestStrategyDraftWithResponse(ctx context.Context, body BacktestStrategyDraftJSONRequestBody, reqEditors ...RequestEditorFn) (*BacktestStrategyDraftResponse, error) {
-	rsp, err := c.BacktestStrategyDraft(ctx, body, reqEditors...)
+// Corresponds with POST /api/v1/admin/strategy-backtests (the `BacktestStrategy` operationId).
+func (c *ClientWithResponses) BacktestStrategyWithResponse(ctx context.Context, body BacktestStrategyJSONRequestBody, reqEditors ...RequestEditorFn) (*BacktestStrategyResponse, error) {
+	rsp, err := c.BacktestStrategy(ctx, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseBacktestStrategyDraftResponse(rsp)
+	return ParseBacktestStrategyResponse(rsp)
 }
 
 // GetStrategyCatalogWithResponse List what strategy expressions read
@@ -10281,8 +9002,8 @@ func (c *ClientWithResponses) UpdatePriceAlertWithResponse(ctx context.Context, 
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with POST /api/v1/analysis/instruments/{symbol} (the `AnalyzeInstrument` operationId).
-func (c *ClientWithResponses) AnalyzeInstrumentWithBodyWithResponse(ctx context.Context, symbol Symbol, params *AnalyzeInstrumentParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AnalyzeInstrumentResponse, error) {
-	rsp, err := c.AnalyzeInstrumentWithBody(ctx, symbol, params, contentType, body, reqEditors...)
+func (c *ClientWithResponses) AnalyzeInstrumentWithBodyWithResponse(ctx context.Context, symbol Symbol, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AnalyzeInstrumentResponse, error) {
+	rsp, err := c.AnalyzeInstrumentWithBody(ctx, symbol, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -10294,34 +9015,34 @@ func (c *ClientWithResponses) AnalyzeInstrumentWithBodyWithResponse(ctx context.
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with POST /api/v1/analysis/instruments/{symbol} (the `AnalyzeInstrument` operationId).
-func (c *ClientWithResponses) AnalyzeInstrumentWithResponse(ctx context.Context, symbol Symbol, params *AnalyzeInstrumentParams, body AnalyzeInstrumentJSONRequestBody, reqEditors ...RequestEditorFn) (*AnalyzeInstrumentResponse, error) {
-	rsp, err := c.AnalyzeInstrument(ctx, symbol, params, body, reqEditors...)
+func (c *ClientWithResponses) AnalyzeInstrumentWithResponse(ctx context.Context, symbol Symbol, body AnalyzeInstrumentJSONRequestBody, reqEditors ...RequestEditorFn) (*AnalyzeInstrumentResponse, error) {
+	rsp, err := c.AnalyzeInstrument(ctx, symbol, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
 	return ParseAnalyzeInstrumentResponse(rsp)
 }
 
-// AnalyzeMarketWithBodyWithResponse Analyze active instruments in the market
+// AnalyzeMarketWithBodyWithResponse Analyze the instruments of a universe
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with POST /api/v1/analysis/market (the `AnalyzeMarket` operationId).
-func (c *ClientWithResponses) AnalyzeMarketWithBodyWithResponse(ctx context.Context, params *AnalyzeMarketParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AnalyzeMarketResponse, error) {
-	rsp, err := c.AnalyzeMarketWithBody(ctx, params, contentType, body, reqEditors...)
+func (c *ClientWithResponses) AnalyzeMarketWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AnalyzeMarketResponse, error) {
+	rsp, err := c.AnalyzeMarketWithBody(ctx, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
 	return ParseAnalyzeMarketResponse(rsp)
 }
 
-// AnalyzeMarketWithResponse Analyze active instruments in the market
+// AnalyzeMarketWithResponse Analyze the instruments of a universe
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with POST /api/v1/analysis/market (the `AnalyzeMarket` operationId).
-func (c *ClientWithResponses) AnalyzeMarketWithResponse(ctx context.Context, params *AnalyzeMarketParams, body AnalyzeMarketJSONRequestBody, reqEditors ...RequestEditorFn) (*AnalyzeMarketResponse, error) {
-	rsp, err := c.AnalyzeMarket(ctx, params, body, reqEditors...)
+func (c *ClientWithResponses) AnalyzeMarketWithResponse(ctx context.Context, body AnalyzeMarketJSONRequestBody, reqEditors ...RequestEditorFn) (*AnalyzeMarketResponse, error) {
+	rsp, err := c.AnalyzeMarket(ctx, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -10333,8 +9054,8 @@ func (c *ClientWithResponses) AnalyzeMarketWithResponse(ctx context.Context, par
 // Returns a wrapper object for the known response body format(s).
 //
 // Corresponds with DELETE /api/v1/auth/session (the `DeleteSession` operationId).
-func (c *ClientWithResponses) DeleteSessionWithResponse(ctx context.Context, params *DeleteSessionParams, reqEditors ...RequestEditorFn) (*DeleteSessionResponse, error) {
-	rsp, err := c.DeleteSession(ctx, params, reqEditors...)
+func (c *ClientWithResponses) DeleteSessionWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*DeleteSessionResponse, error) {
+	rsp, err := c.DeleteSession(ctx, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -10346,8 +9067,8 @@ func (c *ClientWithResponses) DeleteSessionWithResponse(ctx context.Context, par
 // Returns a wrapper object for the known response body format(s).
 //
 // Corresponds with POST /api/v1/auth/session (the `CreateSession` operationId).
-func (c *ClientWithResponses) CreateSessionWithResponse(ctx context.Context, params *CreateSessionParams, reqEditors ...RequestEditorFn) (*CreateSessionResponse, error) {
-	rsp, err := c.CreateSession(ctx, params, reqEditors...)
+func (c *ClientWithResponses) CreateSessionWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*CreateSessionResponse, error) {
+	rsp, err := c.CreateSession(ctx, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -10380,32 +9101,6 @@ func (c *ClientWithResponses) ListFavoritesWithResponse(ctx context.Context, req
 		return nil, err
 	}
 	return ParseListFavoritesResponse(rsp)
-}
-
-// AnalyzeFavoritesWithBodyWithResponse Analyze the current user's active favorite instruments
-//
-// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
-//
-// Corresponds with POST /api/v1/favorites/analysis (the `AnalyzeFavorites` operationId).
-func (c *ClientWithResponses) AnalyzeFavoritesWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AnalyzeFavoritesResponse, error) {
-	rsp, err := c.AnalyzeFavoritesWithBody(ctx, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseAnalyzeFavoritesResponse(rsp)
-}
-
-// AnalyzeFavoritesWithResponse Analyze the current user's active favorite instruments
-//
-// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
-//
-// Corresponds with POST /api/v1/favorites/analysis (the `AnalyzeFavorites` operationId).
-func (c *ClientWithResponses) AnalyzeFavoritesWithResponse(ctx context.Context, body AnalyzeFavoritesJSONRequestBody, reqEditors ...RequestEditorFn) (*AnalyzeFavoritesResponse, error) {
-	rsp, err := c.AnalyzeFavorites(ctx, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseAnalyzeFavoritesResponse(rsp)
 }
 
 // RemoveFavoriteWithResponse performs a DELETE /api/v1/favorites/{symbol} (the `RemoveFavorite` operationId) request.
@@ -10506,8 +9201,8 @@ func (c *ClientWithResponses) ListInstrumentCandlesWithResponse(ctx context.Cont
 // Returns a wrapper object for the known response body format(s).
 //
 // Corresponds with GET /api/v1/instruments/{symbol}/grid-limits (the `GetInstrumentGridLimits` operationId).
-func (c *ClientWithResponses) GetInstrumentGridLimitsWithResponse(ctx context.Context, symbol Symbol, params *GetInstrumentGridLimitsParams, reqEditors ...RequestEditorFn) (*GetInstrumentGridLimitsResponse, error) {
-	rsp, err := c.GetInstrumentGridLimits(ctx, symbol, params, reqEditors...)
+func (c *ClientWithResponses) GetInstrumentGridLimitsWithResponse(ctx context.Context, symbol Symbol, reqEditors ...RequestEditorFn) (*GetInstrumentGridLimitsResponse, error) {
+	rsp, err := c.GetInstrumentGridLimits(ctx, symbol, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -10532,8 +9227,8 @@ func (c *ClientWithResponses) GetCurrentUserWithResponse(ctx context.Context, re
 // Returns a wrapper object for the known response body format(s).
 //
 // Corresponds with GET /health/live (the `GetLiveness` operationId).
-func (c *ClientWithResponses) GetLivenessWithResponse(ctx context.Context, params *GetLivenessParams, reqEditors ...RequestEditorFn) (*GetLivenessResponse, error) {
-	rsp, err := c.GetLiveness(ctx, params, reqEditors...)
+func (c *ClientWithResponses) GetLivenessWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetLivenessResponse, error) {
+	rsp, err := c.GetLiveness(ctx, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -10545,8 +9240,8 @@ func (c *ClientWithResponses) GetLivenessWithResponse(ctx context.Context, param
 // Returns a wrapper object for the known response body format(s).
 //
 // Corresponds with GET /health/ready (the `GetReadiness` operationId).
-func (c *ClientWithResponses) GetReadinessWithResponse(ctx context.Context, params *GetReadinessParams, reqEditors ...RequestEditorFn) (*GetReadinessResponse, error) {
-	rsp, err := c.GetReadiness(ctx, params, reqEditors...)
+func (c *ClientWithResponses) GetReadinessWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetReadinessResponse, error) {
+	rsp, err := c.GetReadiness(ctx, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -10600,29 +9295,6 @@ func ParseGetCandleHistoryLoadResponse(rsp *http.Response) (*GetCandleHistoryLoa
 
 	}
 
-	switch {
-	case rsp.StatusCode == 401:
-		var headers GetCandleHistoryLoadResponse401Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers401 = &headers
-	case rsp.StatusCode == 500:
-		var headers GetCandleHistoryLoadResponse500Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers500 = &headers
-	}
-
 	return response, nil
 }
 
@@ -10668,29 +9340,6 @@ func ParseListIndicatorTypesResponse(rsp *http.Response) (*ListIndicatorTypesRes
 		}
 		response.JSON500 = &dest
 
-	}
-
-	switch {
-	case rsp.StatusCode == 401:
-		var headers ListIndicatorTypesResponse401Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers401 = &headers
-	case rsp.StatusCode == 500:
-		var headers ListIndicatorTypesResponse500Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers500 = &headers
 	}
 
 	return response, nil
@@ -10754,39 +9403,6 @@ func ParseReorderScannerIndicatorsResponse(rsp *http.Response) (*ReorderScannerI
 
 	}
 
-	switch {
-	case rsp.StatusCode == 400:
-		var headers ReorderScannerIndicatorsResponse400Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers400 = &headers
-	case rsp.StatusCode == 401:
-		var headers ReorderScannerIndicatorsResponse401Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers401 = &headers
-	case rsp.StatusCode == 500:
-		var headers ReorderScannerIndicatorsResponse500Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers500 = &headers
-	}
-
 	return response, nil
 }
 
@@ -10832,29 +9448,6 @@ func ParseListScannerIndicatorsResponse(rsp *http.Response) (*ListScannerIndicat
 		}
 		response.JSON500 = &dest
 
-	}
-
-	switch {
-	case rsp.StatusCode == 401:
-		var headers ListScannerIndicatorsResponse401Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers401 = &headers
-	case rsp.StatusCode == 500:
-		var headers ListScannerIndicatorsResponse500Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers500 = &headers
 	}
 
 	return response, nil
@@ -10918,39 +9511,6 @@ func ParseCreateScannerIndicatorResponse(rsp *http.Response) (*CreateScannerIndi
 
 	}
 
-	switch {
-	case rsp.StatusCode == 400:
-		var headers CreateScannerIndicatorResponse400Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers400 = &headers
-	case rsp.StatusCode == 401:
-		var headers CreateScannerIndicatorResponse401Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers401 = &headers
-	case rsp.StatusCode == 500:
-		var headers CreateScannerIndicatorResponse500Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers500 = &headers
-	}
-
 	return response, nil
 }
 
@@ -10999,29 +9559,6 @@ func ParseDeleteScannerIndicatorResponse(rsp *http.Response) (*DeleteScannerIndi
 		}
 		response.JSON500 = &dest
 
-	}
-
-	switch {
-	case rsp.StatusCode == 401:
-		var headers DeleteScannerIndicatorResponse401Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers401 = &headers
-	case rsp.StatusCode == 500:
-		var headers DeleteScannerIndicatorResponse500Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers500 = &headers
 	}
 
 	return response, nil
@@ -11092,39 +9629,6 @@ func ParseUpdateScannerIndicatorResponse(rsp *http.Response) (*UpdateScannerIndi
 
 	}
 
-	switch {
-	case rsp.StatusCode == 400:
-		var headers UpdateScannerIndicatorResponse400Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers400 = &headers
-	case rsp.StatusCode == 401:
-		var headers UpdateScannerIndicatorResponse401Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers401 = &headers
-	case rsp.StatusCode == 500:
-		var headers UpdateScannerIndicatorResponse500Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers500 = &headers
-	}
-
 	return response, nil
 }
 
@@ -11172,29 +9676,6 @@ func ParseListStrategiesResponse(rsp *http.Response) (*ListStrategiesResponse, e
 
 	}
 
-	switch {
-	case rsp.StatusCode == 401:
-		var headers ListStrategiesResponse401Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers401 = &headers
-	case rsp.StatusCode == 500:
-		var headers ListStrategiesResponse500Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers500 = &headers
-	}
-
 	return response, nil
 }
 
@@ -11220,7 +9701,7 @@ func ParseCreateStrategyResponse(rsp *http.Response) (*CreateStrategyResponse, e
 		response.JSON201 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest BadRequest
+		var dest StrategyInvalid
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -11254,39 +9735,6 @@ func ParseCreateStrategyResponse(rsp *http.Response) (*CreateStrategyResponse, e
 		}
 		response.JSON500 = &dest
 
-	}
-
-	switch {
-	case rsp.StatusCode == 400:
-		var headers CreateStrategyResponse400Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers400 = &headers
-	case rsp.StatusCode == 401:
-		var headers CreateStrategyResponse401Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers401 = &headers
-	case rsp.StatusCode == 500:
-		var headers CreateStrategyResponse500Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers500 = &headers
 	}
 
 	return response, nil
@@ -11339,27 +9787,58 @@ func ParseDeleteStrategyResponse(rsp *http.Response) (*DeleteStrategyResponse, e
 
 	}
 
+	return response, nil
+}
+
+// ParseGetStrategyResponse parses an HTTP response from a GetStrategyWithResponse call
+func ParseGetStrategyResponse(rsp *http.Response) (*GetStrategyResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetStrategyResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
 	switch {
-	case rsp.StatusCode == 401:
-		var headers DeleteStrategyResponse401Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Strategy
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
 		}
-		response.Headers401 = &headers
-	case rsp.StatusCode == 500:
-		var headers DeleteStrategyResponse500Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
 		}
-		response.Headers500 = &headers
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest AdministratorRequired
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest StrategyNotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
 	}
 
 	return response, nil
@@ -11387,7 +9866,7 @@ func ParseSetStrategyEnabledResponse(rsp *http.Response) (*SetStrategyEnabledRes
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest BadRequest
+		var dest StrategyInvalid
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -11423,39 +9902,6 @@ func ParseSetStrategyEnabledResponse(rsp *http.Response) (*SetStrategyEnabledRes
 
 	}
 
-	switch {
-	case rsp.StatusCode == 400:
-		var headers SetStrategyEnabledResponse400Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers400 = &headers
-	case rsp.StatusCode == 401:
-		var headers SetStrategyEnabledResponse401Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers401 = &headers
-	case rsp.StatusCode == 500:
-		var headers SetStrategyEnabledResponse500Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers500 = &headers
-	}
-
 	return response, nil
 }
 
@@ -11481,7 +9927,7 @@ func ParseUpdateStrategyResponse(rsp *http.Response) (*UpdateStrategyResponse, e
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest BadRequest
+		var dest StrategyInvalid
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -11524,39 +9970,6 @@ func ParseUpdateStrategyResponse(rsp *http.Response) (*UpdateStrategyResponse, e
 
 	}
 
-	switch {
-	case rsp.StatusCode == 400:
-		var headers UpdateStrategyResponse400Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers400 = &headers
-	case rsp.StatusCode == 401:
-		var headers UpdateStrategyResponse401Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers401 = &headers
-	case rsp.StatusCode == 500:
-		var headers UpdateStrategyResponse500Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers500 = &headers
-	}
-
 	return response, nil
 }
 
@@ -11582,7 +9995,7 @@ func ParseBacktestStrategyResponse(rsp *http.Response) (*BacktestStrategyRespons
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest BadRequest
+		var dest StrategyInvalid
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -11632,207 +10045,6 @@ func ParseBacktestStrategyResponse(rsp *http.Response) (*BacktestStrategyRespons
 
 	}
 
-	switch {
-	case rsp.StatusCode == 400:
-		var headers BacktestStrategyResponse400Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers400 = &headers
-	case rsp.StatusCode == 401:
-		var headers BacktestStrategyResponse401Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers401 = &headers
-	case rsp.StatusCode == 404:
-		var headers BacktestStrategyResponse404Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers404 = &headers
-	case rsp.StatusCode == 429:
-		var headers BacktestStrategyResponse429Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers429 = &headers
-	case rsp.StatusCode == 500:
-		var headers BacktestStrategyResponse500Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers500 = &headers
-	case rsp.StatusCode == 503:
-		var headers BacktestStrategyResponse503Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers503 = &headers
-	}
-
-	return response, nil
-}
-
-// ParseBacktestStrategyDraftResponse parses an HTTP response from a BacktestStrategyDraftWithResponse call
-func ParseBacktestStrategyDraftResponse(rsp *http.Response) (*BacktestStrategyDraftResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &BacktestStrategyDraftResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest StrategyBacktest
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest BadRequest
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON400 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
-		var dest Unauthenticated
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON401 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
-		var dest AdministratorRequired
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON403 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
-		var dest SymbolNotFound
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON404 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
-		var dest BacktestBusy
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON429 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
-		var dest InternalError
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON500 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
-		var dest BacktestTooHeavy
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON503 = &dest
-
-	}
-
-	switch {
-	case rsp.StatusCode == 400:
-		var headers BacktestStrategyDraftResponse400Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers400 = &headers
-	case rsp.StatusCode == 401:
-		var headers BacktestStrategyDraftResponse401Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers401 = &headers
-	case rsp.StatusCode == 404:
-		var headers BacktestStrategyDraftResponse404Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers404 = &headers
-	case rsp.StatusCode == 429:
-		var headers BacktestStrategyDraftResponse429Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers429 = &headers
-	case rsp.StatusCode == 500:
-		var headers BacktestStrategyDraftResponse500Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers500 = &headers
-	case rsp.StatusCode == 503:
-		var headers BacktestStrategyDraftResponse503Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers503 = &headers
-	}
-
 	return response, nil
 }
 
@@ -11878,29 +10090,6 @@ func ParseGetStrategyCatalogResponse(rsp *http.Response) (*GetStrategyCatalogRes
 		}
 		response.JSON500 = &dest
 
-	}
-
-	switch {
-	case rsp.StatusCode == 401:
-		var headers GetStrategyCatalogResponse401Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers401 = &headers
-	case rsp.StatusCode == 500:
-		var headers GetStrategyCatalogResponse500Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers500 = &headers
 	}
 
 	return response, nil
@@ -11957,39 +10146,6 @@ func ParseValidateStrategyResponse(rsp *http.Response) (*ValidateStrategyRespons
 
 	}
 
-	switch {
-	case rsp.StatusCode == 400:
-		var headers ValidateStrategyResponse400Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers400 = &headers
-	case rsp.StatusCode == 401:
-		var headers ValidateStrategyResponse401Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers401 = &headers
-	case rsp.StatusCode == 500:
-		var headers ValidateStrategyResponse500Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers500 = &headers
-	}
-
 	return response, nil
 }
 
@@ -12035,29 +10191,6 @@ func ParseListUsersResponse(rsp *http.Response) (*ListUsersResponse, error) {
 		}
 		response.JSON500 = &dest
 
-	}
-
-	switch {
-	case rsp.StatusCode == 401:
-		var headers ListUsersResponse401Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers401 = &headers
-	case rsp.StatusCode == 500:
-		var headers ListUsersResponse500Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers500 = &headers
 	}
 
 	return response, nil
@@ -12117,29 +10250,6 @@ func ParseDeleteUserResponse(rsp *http.Response) (*DeleteUserResponse, error) {
 
 	}
 
-	switch {
-	case rsp.StatusCode == 401:
-		var headers DeleteUserResponse401Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers401 = &headers
-	case rsp.StatusCode == 500:
-		var headers DeleteUserResponse500Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers500 = &headers
-	}
-
 	return response, nil
 }
 
@@ -12197,29 +10307,6 @@ func ParseUpdateUserResponse(rsp *http.Response) (*UpdateUserResponse, error) {
 
 	}
 
-	switch {
-	case rsp.StatusCode == 401:
-		var headers UpdateUserResponse401Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers401 = &headers
-	case rsp.StatusCode == 500:
-		var headers UpdateUserResponse500Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers500 = &headers
-	}
-
 	return response, nil
 }
 
@@ -12268,39 +10355,6 @@ func ParseDeletePriceAlertResponse(rsp *http.Response) (*DeletePriceAlertRespons
 		}
 		response.JSON500 = &dest
 
-	}
-
-	switch {
-	case rsp.StatusCode == 401:
-		var headers DeletePriceAlertResponse401Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers401 = &headers
-	case rsp.StatusCode == 403:
-		var headers DeletePriceAlertResponse403Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers403 = &headers
-	case rsp.StatusCode == 500:
-		var headers DeletePriceAlertResponse500Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers500 = &headers
 	}
 
 	return response, nil
@@ -12369,49 +10423,6 @@ func ParseUpdatePriceAlertResponse(rsp *http.Response) (*UpdatePriceAlertRespons
 		}
 		response.JSON500 = &dest
 
-	}
-
-	switch {
-	case rsp.StatusCode == 400:
-		var headers UpdatePriceAlertResponse400Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers400 = &headers
-	case rsp.StatusCode == 401:
-		var headers UpdatePriceAlertResponse401Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers401 = &headers
-	case rsp.StatusCode == 403:
-		var headers UpdatePriceAlertResponse403Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers403 = &headers
-	case rsp.StatusCode == 500:
-		var headers UpdatePriceAlertResponse500Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers500 = &headers
 	}
 
 	return response, nil
@@ -12496,99 +10507,6 @@ func ParseAnalyzeInstrumentResponse(rsp *http.Response) (*AnalyzeInstrumentRespo
 
 	}
 
-	switch {
-	case rsp.StatusCode == 200:
-		var headers AnalyzeInstrumentResponse200Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers200 = &headers
-	case rsp.StatusCode == 400:
-		var headers AnalyzeInstrumentResponse400Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers400 = &headers
-	case rsp.StatusCode == 401:
-		var headers AnalyzeInstrumentResponse401Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers401 = &headers
-	case rsp.StatusCode == 403:
-		var headers AnalyzeInstrumentResponse403Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers403 = &headers
-	case rsp.StatusCode == 404:
-		var headers AnalyzeInstrumentResponse404Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers404 = &headers
-	case rsp.StatusCode == 409:
-		var headers AnalyzeInstrumentResponse409Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers409 = &headers
-	case rsp.StatusCode == 422:
-		var headers AnalyzeInstrumentResponse422Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers422 = &headers
-	case rsp.StatusCode == 500:
-		var headers AnalyzeInstrumentResponse500Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers500 = &headers
-	case rsp.StatusCode == 503:
-		var headers AnalyzeInstrumentResponse503Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers503 = &headers
-	}
-
 	return response, nil
 }
 
@@ -12657,79 +10575,6 @@ func ParseAnalyzeMarketResponse(rsp *http.Response) (*AnalyzeMarketResponse, err
 
 	}
 
-	switch {
-	case rsp.StatusCode == 200:
-		var headers AnalyzeMarketResponse200Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers200 = &headers
-	case rsp.StatusCode == 400:
-		var headers AnalyzeMarketResponse400Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers400 = &headers
-	case rsp.StatusCode == 401:
-		var headers AnalyzeMarketResponse401Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers401 = &headers
-	case rsp.StatusCode == 403:
-		var headers AnalyzeMarketResponse403Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers403 = &headers
-	case rsp.StatusCode == 422:
-		var headers AnalyzeMarketResponse422Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers422 = &headers
-	case rsp.StatusCode == 500:
-		var headers AnalyzeMarketResponse500Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers500 = &headers
-	case rsp.StatusCode == 503:
-		var headers AnalyzeMarketResponse503Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers503 = &headers
-	}
-
 	return response, nil
 }
 
@@ -12771,39 +10616,6 @@ func ParseDeleteSessionResponse(rsp *http.Response) (*DeleteSessionResponse, err
 		}
 		response.JSON500 = &dest
 
-	}
-
-	switch {
-	case rsp.StatusCode == 401:
-		var headers DeleteSessionResponse401Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers401 = &headers
-	case rsp.StatusCode == 403:
-		var headers DeleteSessionResponse403Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers403 = &headers
-	case rsp.StatusCode == 500:
-		var headers DeleteSessionResponse500Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers500 = &headers
 	}
 
 	return response, nil
@@ -12853,49 +10665,6 @@ func ParseCreateSessionResponse(rsp *http.Response) (*CreateSessionResponse, err
 
 	}
 
-	switch {
-	case rsp.StatusCode == 201:
-		var headers CreateSessionResponse201Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers201 = &headers
-	case rsp.StatusCode == 401:
-		var headers CreateSessionResponse401Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers401 = &headers
-	case rsp.StatusCode == 403:
-		var headers CreateSessionResponse403Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers403 = &headers
-	case rsp.StatusCode == 500:
-		var headers CreateSessionResponse500Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers500 = &headers
-	}
-
 	return response, nil
 }
 
@@ -12943,39 +10712,6 @@ func ParseListChartIndicatorsResponse(rsp *http.Response) (*ListChartIndicatorsR
 
 	}
 
-	switch {
-	case rsp.StatusCode == 401:
-		var headers ListChartIndicatorsResponse401Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers401 = &headers
-	case rsp.StatusCode == 403:
-		var headers ListChartIndicatorsResponse403Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers403 = &headers
-	case rsp.StatusCode == 500:
-		var headers ListChartIndicatorsResponse500Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers500 = &headers
-	}
-
 	return response, nil
 }
 
@@ -13021,170 +10757,6 @@ func ParseListFavoritesResponse(rsp *http.Response) (*ListFavoritesResponse, err
 		}
 		response.JSON500 = &dest
 
-	}
-
-	switch {
-	case rsp.StatusCode == 401:
-		var headers ListFavoritesResponse401Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers401 = &headers
-	case rsp.StatusCode == 403:
-		var headers ListFavoritesResponse403Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers403 = &headers
-	case rsp.StatusCode == 500:
-		var headers ListFavoritesResponse500Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers500 = &headers
-	}
-
-	return response, nil
-}
-
-// ParseAnalyzeFavoritesResponse parses an HTTP response from a AnalyzeFavoritesWithResponse call
-func ParseAnalyzeFavoritesResponse(rsp *http.Response) (*AnalyzeFavoritesResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &AnalyzeFavoritesResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest MarketAnalysisResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest BadRequest
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON400 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
-		var dest Unauthenticated
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON401 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
-		var dest AccessDenied
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON403 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
-		var dest UnprocessableAnalysis
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON422 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
-		var dest InternalError
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON500 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
-		var dest AnalysisUnavailable
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON503 = &dest
-
-	}
-
-	switch {
-	case rsp.StatusCode == 400:
-		var headers AnalyzeFavoritesResponse400Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers400 = &headers
-	case rsp.StatusCode == 401:
-		var headers AnalyzeFavoritesResponse401Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers401 = &headers
-	case rsp.StatusCode == 403:
-		var headers AnalyzeFavoritesResponse403Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers403 = &headers
-	case rsp.StatusCode == 422:
-		var headers AnalyzeFavoritesResponse422Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers422 = &headers
-	case rsp.StatusCode == 500:
-		var headers AnalyzeFavoritesResponse500Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers500 = &headers
-	case rsp.StatusCode == 503:
-		var headers AnalyzeFavoritesResponse503Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers503 = &headers
 	}
 
 	return response, nil
@@ -13244,39 +10816,6 @@ func ParseRemoveFavoriteResponse(rsp *http.Response) (*RemoveFavoriteResponse, e
 
 	}
 
-	switch {
-	case rsp.StatusCode == 401:
-		var headers RemoveFavoriteResponse401Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers401 = &headers
-	case rsp.StatusCode == 403:
-		var headers RemoveFavoriteResponse403Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers403 = &headers
-	case rsp.StatusCode == 500:
-		var headers RemoveFavoriteResponse500Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers500 = &headers
-	}
-
 	return response, nil
 }
 
@@ -13331,49 +10870,6 @@ func ParseAddFavoriteResponse(rsp *http.Response) (*AddFavoriteResponse, error) 
 
 	}
 
-	switch {
-	case rsp.StatusCode == 401:
-		var headers AddFavoriteResponse401Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers401 = &headers
-	case rsp.StatusCode == 403:
-		var headers AddFavoriteResponse403Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers403 = &headers
-	case rsp.StatusCode == 404:
-		var headers AddFavoriteResponse404Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers404 = &headers
-	case rsp.StatusCode == 500:
-		var headers AddFavoriteResponse500Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers500 = &headers
-	}
-
 	return response, nil
 }
 
@@ -13421,39 +10917,6 @@ func ParseListInstrumentsResponse(rsp *http.Response) (*ListInstrumentsResponse,
 
 	}
 
-	switch {
-	case rsp.StatusCode == 401:
-		var headers ListInstrumentsResponse401Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers401 = &headers
-	case rsp.StatusCode == 403:
-		var headers ListInstrumentsResponse403Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers403 = &headers
-	case rsp.StatusCode == 500:
-		var headers ListInstrumentsResponse500Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers500 = &headers
-	}
-
 	return response, nil
 }
 
@@ -13499,39 +10962,6 @@ func ParseListPriceAlertsResponse(rsp *http.Response) (*ListPriceAlertsResponse,
 		}
 		response.JSON500 = &dest
 
-	}
-
-	switch {
-	case rsp.StatusCode == 401:
-		var headers ListPriceAlertsResponse401Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers401 = &headers
-	case rsp.StatusCode == 403:
-		var headers ListPriceAlertsResponse403Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers403 = &headers
-	case rsp.StatusCode == 500:
-		var headers ListPriceAlertsResponse500Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers500 = &headers
 	}
 
 	return response, nil
@@ -13602,59 +11032,6 @@ func ParseCreatePriceAlertResponse(rsp *http.Response) (*CreatePriceAlertRespons
 
 	}
 
-	switch {
-	case rsp.StatusCode == 400:
-		var headers CreatePriceAlertResponse400Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers400 = &headers
-	case rsp.StatusCode == 401:
-		var headers CreatePriceAlertResponse401Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers401 = &headers
-	case rsp.StatusCode == 403:
-		var headers CreatePriceAlertResponse403Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers403 = &headers
-	case rsp.StatusCode == 404:
-		var headers CreatePriceAlertResponse404Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers404 = &headers
-	case rsp.StatusCode == 500:
-		var headers CreatePriceAlertResponse500Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers500 = &headers
-	}
-
 	return response, nil
 }
 
@@ -13714,69 +11091,6 @@ func ParseListInstrumentCandlesResponse(rsp *http.Response) (*ListInstrumentCand
 		}
 		response.JSON500 = &dest
 
-	}
-
-	switch {
-	case rsp.StatusCode == 200:
-		var headers ListInstrumentCandlesResponse200Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers200 = &headers
-	case rsp.StatusCode == 400:
-		var headers ListInstrumentCandlesResponse400Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers400 = &headers
-	case rsp.StatusCode == 401:
-		var headers ListInstrumentCandlesResponse401Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers401 = &headers
-	case rsp.StatusCode == 403:
-		var headers ListInstrumentCandlesResponse403Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers403 = &headers
-	case rsp.StatusCode == 404:
-		var headers ListInstrumentCandlesResponse404Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers404 = &headers
-	case rsp.StatusCode == 500:
-		var headers ListInstrumentCandlesResponse500Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers500 = &headers
 	}
 
 	return response, nil
@@ -13847,79 +11161,6 @@ func ParseGetInstrumentGridLimitsResponse(rsp *http.Response) (*GetInstrumentGri
 
 	}
 
-	switch {
-	case rsp.StatusCode == 200:
-		var headers GetInstrumentGridLimitsResponse200Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers200 = &headers
-	case rsp.StatusCode == 400:
-		var headers GetInstrumentGridLimitsResponse400Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers400 = &headers
-	case rsp.StatusCode == 401:
-		var headers GetInstrumentGridLimitsResponse401Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers401 = &headers
-	case rsp.StatusCode == 403:
-		var headers GetInstrumentGridLimitsResponse403Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers403 = &headers
-	case rsp.StatusCode == 404:
-		var headers GetInstrumentGridLimitsResponse404Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers404 = &headers
-	case rsp.StatusCode == 500:
-		var headers GetInstrumentGridLimitsResponse500Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers500 = &headers
-	case rsp.StatusCode == 503:
-		var headers GetInstrumentGridLimitsResponse503Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers503 = &headers
-	}
-
 	return response, nil
 }
 
@@ -13967,39 +11208,6 @@ func ParseGetCurrentUserResponse(rsp *http.Response) (*GetCurrentUserResponse, e
 
 	}
 
-	switch {
-	case rsp.StatusCode == 401:
-		var headers GetCurrentUserResponse401Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers401 = &headers
-	case rsp.StatusCode == 403:
-		var headers GetCurrentUserResponse403Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers403 = &headers
-	case rsp.StatusCode == 500:
-		var headers GetCurrentUserResponse500Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers500 = &headers
-	}
-
 	return response, nil
 }
 
@@ -14024,19 +11232,6 @@ func ParseGetLivenessResponse(rsp *http.Response) (*GetLivenessResponse, error) 
 		}
 		response.JSON200 = &dest
 
-	}
-
-	switch {
-	case rsp.StatusCode == 200:
-		var headers GetLivenessResponse200Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers200 = &headers
 	}
 
 	return response, nil
@@ -14070,29 +11265,6 @@ func ParseGetReadinessResponse(rsp *http.Response) (*GetReadinessResponse, error
 		}
 		response.JSON503 = &dest
 
-	}
-
-	switch {
-	case rsp.StatusCode == 200:
-		var headers GetReadinessResponse200Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers200 = &headers
-	case rsp.StatusCode == 503:
-		var headers GetReadinessResponse503Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers503 = &headers
 	}
 
 	return response, nil

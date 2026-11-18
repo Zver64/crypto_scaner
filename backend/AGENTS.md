@@ -40,10 +40,12 @@ Rules:
 
 ## HTTP API
 
-- Build error responses with the helpers in `internal/httpapi/errors.go` so generated responses carry `X-Request-ID`. Report unexpected errors with `api.internalError`, which logs the cause; never return a 500 without logging.
-- Requests the OpenAPI validator rejects get `invalid_argument` naming the parameter or body field and the reason (`requestErrorMessage` in `router.go`), never kin-openapi's schema and value dumps.
+- Build error responses with the helpers in `internal/httpapi/errors.go`. The request middleware sets `X-Request-ID` on every response and error bodies carry it as `request_id`; the contract documents the header once, in its description, not on responses. Report unexpected errors with `api.internalError`, which logs the cause; never return a 500 without logging.
+- Requests the OpenAPI validator rejects, or whose parameters the generated handlers cannot bind, get `invalid_argument` naming the parameter or body field and the reason (`requestErrorMessage` in `router.go`, the same for every route), never kin-openapi's schema and value dumps. Never repeat the contract's bounds or defaults in handlers: the validator sets parameter defaults.
+- Strategy writes and backtests report an invalid strategy as `StrategyInvalid`, whose `details.problems` list every problem of its rules (`strategy.InvalidError`), or the one of its other settings.
 - Access is declared only in the contract: every operation secured by `sessionToken` carries `x-access` (`user` or `administrator`), and one that refuses API tokens also carries `x-session-only` with its `session_required` message. `registerSecuredOperations` (`router.go`) registers them from the embedded spec with method-specific patterns, so unsupported methods and unknown paths are rejected before authentication, and fails startup on a missing or unknown `x-access`.
-- `httpapi.New` takes `Dependencies`, all required. Tests replace authentication through `NewWithAuthentication` in `export_test.go`.
+- `httpapi.New` takes `Dependencies`, all required: it fails when one is nil. Handlers read them through the embedded `Dependencies`. Tests pass the dependencies their routes use through `testDependencies` (`dependencies_test.go`), which fills the others with stubs, and replace authentication through `NewWithAuthentication` in `export_test.go`.
+- The instruments of a market universe for a user (`spot`, `coinm_perpetual`, `favorites`) are chosen only by `markettable.Service` (`Analyze`, `Symbols`), never in handlers.
 
 ## Storage
 

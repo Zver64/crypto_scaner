@@ -47,7 +47,9 @@ const selectStrategyCatalog = (response: getStrategyCatalogResponseSuccess) =>
 
 const selectStrategiesOfKind =
 	(kind: StrategyKind) => (response: listStrategiesResponseSuccess) =>
-		response.data.items.filter((strategy) => strategyKind(strategy) === kind);
+		response.data.items.filter(
+			(strategy) => strategyKind(strategy.rules) === kind,
+		);
 
 // One stable select per kind, so the list is filtered again only when the
 // strategies change, not on every render.

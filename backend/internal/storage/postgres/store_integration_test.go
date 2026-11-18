@@ -18,7 +18,6 @@ import (
 	"crypto-scanner/internal/indicator"
 	"crypto-scanner/internal/market"
 	"crypto-scanner/internal/market/marketsync"
-	"crypto-scanner/internal/migrate"
 	"crypto-scanner/internal/scannerindicator"
 	"crypto-scanner/internal/storage/postgres"
 	"crypto-scanner/internal/strategy"
@@ -43,12 +42,11 @@ func TestPostgresStoreContracts(t *testing.T) {
 	if appSchema || marketSchema {
 		t.Fatalf("integration database is not empty: app=%t binance_spot=%t", appSchema, marketSchema)
 	}
-	loadURL := func() (string, error) { return databaseURL, nil }
 	unmigratedStore := postgres.NewStore(db)
 	if !unmigratedStore.DatabaseReady(ctx) || unmigratedStore.MigrationsReady(ctx) || unmigratedStore.SuccessfulMarketSyncExists(ctx) {
 		t.Fatal("unmigrated database readiness checks did not distinguish connectivity from schema and synchronization")
 	}
-	if err := migrate.Run(ctx, []string{"up"}, loadURL); err != nil {
+	if err := postgres.Migrate(ctx, databaseURL, postgres.DirectionUp); err != nil {
 		t.Fatalf("migrate disposable PostgreSQL: %v", err)
 	}
 	t.Cleanup(func() {
@@ -847,7 +845,7 @@ func TestPostgresStoreContracts(t *testing.T) {
 			return current
 		}
 		for version() >= 33 {
-			if err := migrate.Run(ctx, []string{"down"}, loadURL); err != nil {
+			if err := postgres.Migrate(ctx, databaseURL, postgres.DirectionDown); err != nil {
 				t.Fatalf("migrate down: %v", err)
 			}
 		}
@@ -857,7 +855,7 @@ func TestPostgresStoreContracts(t *testing.T) {
 		if err := db.QueryRow(ctx, `SELECT string_agg(indicator_type || parameters::TEXT || ':' || interval || ':' || show_in_table || ':' || show_in_chart, ',' ORDER BY interval) FROM app.scanner_indicators`).Scan(&rowsDown); err != nil || rowsDown != periodsBefore {
 			t.Fatalf("indicator rows after migrating down = %q, %v; want %q", rowsDown, err, periodsBefore)
 		}
-		if err := migrate.Run(ctx, []string{"up"}, loadURL); err != nil {
+		if err := postgres.Migrate(ctx, databaseURL, postgres.DirectionUp); err != nil {
 			t.Fatalf("migrate up: %v", err)
 		}
 		if up := read("up"); up != before {

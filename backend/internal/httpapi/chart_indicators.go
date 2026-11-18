@@ -9,7 +9,7 @@ import (
 )
 
 func (api *api) ListChartIndicators(ctx context.Context, request ListChartIndicatorsRequestObject) (ListChartIndicatorsResponseObject, error) {
-	catalog, err := api.chart.Catalog(market.CandleInterval(request.Params.Interval))
+	catalog, err := api.Chart.Catalog(market.CandleInterval(request.Params.Interval))
 	if err != nil {
 		return ListChartIndicators500JSONResponse{api.internalError(ctx, "list_chart_indicators", err)}, nil
 	}

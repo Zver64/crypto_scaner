@@ -25,23 +25,11 @@ func (c *cli) backtestCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			params := apiclient.BacktestStrategyParams{}
-			if params.From, params.To, err = target.period(); err != nil {
+			var saved apiclient.BacktestedStrategy
+			if err := saved.FromSavedBacktestedStrategy(apiclient.SavedBacktestedStrategy{Id: id}); err != nil {
 				return err
 			}
-			client, err := c.client()
-			if err != nil {
-				return err
-			}
-			return c.runBacktests(command, target, func(symbol string) ([]byte, *apiclient.StrategyBacktest, error) {
-				params.Symbol = symbol
-				backtest, err := client.BacktestStrategyWithResponse(command.Context(), id, &params)
-				if err != nil {
-					return nil, nil, err
-				}
-				err = c.check(backtest, backtest.JSON200 != nil, backtest.JSON400, backtest.JSON404, backtest.JSON429, backtest.JSON503)
-				return backtest.Body, backtest.JSON200, err
-			})
+			return c.backtest(command, saved, target)
 		},
 	}
 	command.Flags().StringVar(&strategy, "strategy", "", "the saved strategy `ID` (see scanner strategies)")
@@ -60,14 +48,7 @@ func (c *cli) backtestStrategyDraftCommand() *cobra.Command {
 		Short: "Backtest an unsaved strategy on one or more coins",
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
-			body := apiclient.StrategyBacktestInput{
-				Expression: rules.expression, ExitExpression: rules.exit, TakeProfitExpression: rules.takeProfit, StopLossExpression: rules.stopLoss,
-			}
-			var err error
-			if body.Direction, err = strategiesKind.directionFlag(rules.direction); err != nil {
-				return err
-			}
-			return c.backtestDraft(command, body, rules.rules(), target)
+			return c.backtestDraft(command, rules.rules(), target)
 		},
 	}
 	rules.add(command)
@@ -84,14 +65,11 @@ func (c *cli) backtestSignalDraftCommand() *cobra.Command {
 		Short: "Backtest an unsaved signal on one or more coins",
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
-			move, err := rules.parse(command)
+			signal, err := rules.rules(command)
 			if err != nil {
 				return err
 			}
-			ratio, window := rules.judging(move)
-			return c.backtestDraft(command, apiclient.StrategyBacktestInput{
-				Signal: true, Direction: move, Expression: rules.expression, TargetRatio: ratio, Window: window,
-			}, rules.rules(), target)
+			return c.backtestDraft(command, signal, target)
 		},
 	}
 	rules.add(command)
@@ -99,9 +77,19 @@ func (c *cli) backtestSignalDraftCommand() *cobra.Command {
 	return command
 }
 
-// backtestDraft validates rules, reporting every invalid one at once, then
-// sends body with the period of target and prints the result.
-func (c *cli) backtestDraft(command *cobra.Command, body apiclient.StrategyBacktestInput, rules []strategyRule, target backtestFlags) error {
+// backtestDraft backtests unsaved rules, which the server checks.
+func (c *cli) backtestDraft(command *cobra.Command, rules apiclient.StrategyRules, target backtestFlags) error {
+	var draft apiclient.BacktestedStrategy
+	if err := draft.FromDraftBacktestedStrategy(apiclient.DraftBacktestedStrategy{Rules: rules}); err != nil {
+		return err
+	}
+	return c.backtest(command, draft, target)
+}
+
+// backtest backtests strategy, saved or not, with the period of target on
+// each of its coins and prints the results.
+func (c *cli) backtest(command *cobra.Command, strategy apiclient.BacktestedStrategy, target backtestFlags) error {
+	body := apiclient.StrategyBacktestInput{Strategy: strategy}
 	var err error
 	if body.From, body.To, err = target.period(); err != nil {
 		return err
@@ -110,16 +98,13 @@ func (c *cli) backtestDraft(command *cobra.Command, body apiclient.StrategyBackt
 	if err != nil {
 		return err
 	}
-	if err := c.prepareStrategyRules(command, client, rules); err != nil {
-		return err
-	}
 	return c.runBacktests(command, target, func(symbol string) ([]byte, *apiclient.StrategyBacktest, error) {
 		body.Symbol = symbol
-		backtest, err := client.BacktestStrategyDraftWithResponse(command.Context(), body)
+		backtest, err := client.BacktestStrategyWithResponse(command.Context(), body)
 		if err != nil {
 			return nil, nil, err
 		}
-		err = c.check(backtest, backtest.JSON200 != nil, backtest.JSON400, backtest.JSON404, backtest.JSON429, backtest.JSON503)
+		err = c.check(backtest, backtest.JSON200 != nil, strategyInvalid(backtest.JSON400), backtest.JSON404, backtest.JSON429, backtest.JSON503)
 		return backtest.Body, backtest.JSON200, err
 	})
 }

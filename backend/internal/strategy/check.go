@@ -2,6 +2,7 @@ package strategy
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
@@ -37,7 +38,7 @@ func (monitor *Monitor) check(ctx context.Context, state map[uuid.UUID]map[int64
 	// A delisted coin disables the strategy, which then waits for the
 	// coin to be replaced.
 	if absent := entry.inactive(work.instruments); len(absent) > 0 {
-		monitor.halt(ctx, entry, notActive(absent))
+		monitor.halt(ctx, entry, errors.New(notActive(absent)))
 		return
 	}
 	evaluated := entry.instruments(work.instruments)

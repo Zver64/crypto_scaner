@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"crypto-scanner/internal/migrate"
 	"crypto-scanner/internal/opsnotify"
 	"crypto-scanner/internal/platform/config"
 	"crypto-scanner/internal/storage/postgres"
@@ -135,8 +134,7 @@ func TestNormalServerStartupBootstrapsConfiguredAdministrator(t *testing.T) {
 			t.Errorf("reset disposable PostgreSQL: %v", err)
 		}
 	})
-	loadDatabaseURL := func() (string, error) { return databaseURL, nil }
-	if err := migrate.Run(ctx, []string{"up"}, loadDatabaseURL); err != nil {
+	if err := postgres.Migrate(ctx, databaseURL, postgres.DirectionUp); err != nil {
 		t.Fatalf("migrate disposable PostgreSQL: %v", err)
 	}
 

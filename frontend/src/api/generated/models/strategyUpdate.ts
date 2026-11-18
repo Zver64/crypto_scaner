@@ -9,6 +9,10 @@
  * `POST /api/v1/auth/session` and send `Authorization: Bearer <token>` to every
  * other operation. A request rejected with `401` needs a new session.
  *
+ * Every response carries an `X-Request-ID` header: the caller's own
+ * `X-Request-ID` when it is a safe value, otherwise one the server assigns.
+ * Error bodies repeat it as `request_id`.
+ *
  * The client offers the WebSocket subprotocol `crypto-scanner.live.v1` followed by
  * its session token as a second subprotocol (`Sec-WebSocket-Protocol`); the token is
  * never placed in the URL. The handshake fails with `401` for a missing or invalid
@@ -21,49 +25,14 @@
  *
  * OpenAPI spec version: 1.0.0
  */
-import type { Direction } from './direction.ts';
-import type { SignalTargetRatio } from './signalTargetRatio.ts';
-import type { SignalWindow } from './signalWindow.ts';
 import type { StrategyCoins } from './strategyCoins.ts';
-import type { StrategyCoinSource } from './strategyCoinSource.ts';
-import type { StrategyExitExpression } from './strategyExitExpression.ts';
-import type { StrategyMarketCapBound } from './strategyMarketCapBound.ts';
 import type { StrategyMessage } from './strategyMessage.ts';
-import type { StrategySignal } from './strategySignal.ts';
-import type { StrategyStopLossExpression } from './strategyStopLossExpression.ts';
-import type { StrategyTakeProfitExpression } from './strategyTakeProfitExpression.ts';
+import type { StrategyName } from './strategyName.ts';
+import type { StrategyRules } from './strategyRules.ts';
 
 export interface StrategyUpdate {
-  /**
-     * @minLength 1
-     * @maxLength 64
-     */
-  name: string;
-  signal: StrategySignal;
-  direction: Direction;
-  message: StrategyMessage;
-  exit_expression: StrategyExitExpression;
-  take_profit_expression: StrategyTakeProfitExpression;
-  stop_loss_expression: StrategyStopLossExpression;
+  name: StrategyName;
+  rules: StrategyRules;
   coins: StrategyCoins;
-  coin_source: StrategyCoinSource;
-  min_market_cap_usd: StrategyMarketCapBound | null;
-  max_market_cap_usd: StrategyMarketCapBound | null;
-  target_ratio: SignalTargetRatio | null;
-  window: SignalWindow | null;
-  /**
-     * CEL over indicator and candle field calls, such as `rsi("1h")`,
-     * `bbands_upperband("1d", 20, 2.5)`, or `close("1h")`: comparisons
-     * (`>`, `>=`, `<`, `<=`) of arithmetic (`+`, `-`, `*`, `/`,
-     * parentheses) over calls and numbers, combined with `&&`, `||`,
-     * and `!`. `Prev(x)` and `Prev(x, n)` read `x` one or `n` closed
-     * candles earlier; `Percentile(x, n, p)` is the nearest-rank
-     * `p`-th percentile of `x` over the `n` closed candles before the
-     * latest one; `CrossesAbove(a, b)` and `CrossesBelow(a, b)` compare
-     * with the previous candle. `Of("BTCUSDT", x)` reads `x` of another
-     * coin, which must be active.
-     * @minLength 1
-     * @maxLength 2000
-     */
-  expression: string;
+  message: StrategyMessage;
 }

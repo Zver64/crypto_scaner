@@ -22,10 +22,10 @@ export function useCanonicalRules() {
 					? expression
 					: (await validateStrategy({ expression, kind })).data.expression;
 			const [expression, exit, takeProfit, stopLoss] = await Promise.all([
-				canonical(strategy.expression, "entry"),
-				canonical(strategy.exit_expression, "exit"),
-				canonical(strategy.take_profit_expression, "price"),
-				canonical(strategy.stop_loss_expression, "price"),
+				canonical(strategy.rules.expression, "entry"),
+				canonical(strategy.rules.exit_expression, "exit"),
+				canonical(strategy.rules.take_profit_expression, "price"),
+				canonical(strategy.rules.stop_loss_expression, "price"),
 			]);
 			return {
 				expression,

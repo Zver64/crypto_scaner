@@ -42,43 +42,123 @@ type CoinMPerpetuals interface {
 	ListCoinMPerpetuals(context.Context) ([]string, error)
 }
 
+// Instruments lists the active instruments.
+type Instruments interface {
+	ListActiveInstruments(context.Context) ([]market.Instrument, error)
+}
+
+// Favorites lists the favorites of a user.
+type Favorites interface {
+	List(ctx context.Context, userID int64) ([]favorites.Favorite, error)
+}
+
+// Universe is a set of instruments a user analyzes or lists.
+type Universe string
+
+const (
+	// UniverseSpot is every active Spot USDT instrument.
+	UniverseSpot Universe = "spot"
+	// UniverseCoinM is the active instruments of the coins that have a
+	// Binance COIN-M perpetual contract.
+	UniverseCoinM Universe = "coinm_perpetual"
+	// UniverseFavorites is the user's favorites.
+	UniverseFavorites Universe = "favorites"
+)
+
 // Service runs market and favorites analyses and presents the instruments as
 // tables.
 type Service struct {
-	analyzer   Analyzer
-	closed     ClosedIndicators
-	prices     Prices
-	perpetuals CoinMPerpetuals
-	market     Catalog
-	coinM      Catalog
-	favorites  Catalog
+	analyzer    Analyzer
+	closed      ClosedIndicators
+	prices      Prices
+	perpetuals  CoinMPerpetuals
+	instruments Instruments
+	favorites   Favorites
+	tables      Catalogs
 }
 
-// NewService builds market tables with market, COIN-M tables with coinM, and
-// favorites tables with favorites.
-func NewService(analyzer Analyzer, closed ClosedIndicators, prices Prices, perpetuals CoinMPerpetuals, market, coinM, favorites Catalog) (*Service, error) {
-	if analyzer == nil || closed == nil || prices == nil || perpetuals == nil {
+// Catalogs are the tables of the universes.
+type Catalogs struct {
+	Market, CoinM, Favorites Catalog
+}
+
+// NewService builds the tables of each universe with its catalog.
+func NewService(analyzer Analyzer, closed ClosedIndicators, prices Prices, perpetuals CoinMPerpetuals, instruments Instruments, favorites Favorites, tables Catalogs) (*Service, error) {
+	if analyzer == nil || closed == nil || prices == nil || perpetuals == nil || instruments == nil || favorites == nil {
 		return nil, errors.New("market table service dependencies are required")
 	}
-	return &Service{analyzer: analyzer, closed: closed, prices: prices, perpetuals: perpetuals, market: market, coinM: coinM, favorites: favorites}, nil
+	return &Service{analyzer: analyzer, closed: closed, prices: prices, perpetuals: perpetuals, instruments: instruments, favorites: favorites, tables: tables}, nil
 }
 
-func (service *Service) Search(ctx context.Context, request analysis.SearchRequest) (Result, error) {
+// Analyze analyzes the instruments of universe, spot when empty, for the
+// user userID and presents them in the table of the universe.
+func (service *Service) Analyze(ctx context.Context, userID int64, universe Universe, request analysis.SearchRequest) (Result, error) {
+	switch universe {
+	case UniverseCoinM:
+		return service.coinM(ctx, request)
+	case UniverseFavorites:
+		items, err := service.favorites.List(ctx, userID)
+		if err != nil {
+			return Result{}, err
+		}
+		return service.favoritesTable(ctx, items, request)
+	default:
+		return service.search(ctx, request)
+	}
+}
+
+// Symbols lists the symbols of the active instruments of universe, spot when
+// empty, for the user userID: in symbol order, or the favorites order.
+func (service *Service) Symbols(ctx context.Context, userID int64, universe Universe) ([]string, error) {
+	if universe == UniverseFavorites {
+		items, err := service.favorites.List(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
+		var symbols []string
+		for _, item := range items {
+			if item.Active {
+				symbols = append(symbols, item.Symbol)
+			}
+		}
+		return symbols, nil
+	}
+	var coinM []string
+	if universe == UniverseCoinM {
+		var err error
+		if coinM, err = service.coinMSymbols(ctx); err != nil {
+			return nil, err
+		}
+	}
+	instruments, err := service.instruments.ListActiveInstruments(ctx)
+	if err != nil {
+		return nil, err
+	}
+	symbols := make([]string, 0, len(instruments))
+	for _, instrument := range instruments {
+		if universe != UniverseCoinM || slices.Contains(coinM, instrument.Symbol) {
+			symbols = append(symbols, instrument.Symbol)
+		}
+	}
+	return symbols, nil
+}
+
+func (service *Service) search(ctx context.Context, request analysis.SearchRequest) (Result, error) {
 	windows := market.NewPriceWindows(time.Now())
 	search, err := service.analyzer.Search(ctx, request)
 	if err != nil {
 		return Result{}, err
 	}
-	coinM, err := service.CoinMSymbols(ctx)
+	coinM, err := service.coinMSymbols(ctx)
 	if err != nil {
 		return Result{}, err
 	}
-	return service.searchResult(ctx, search, service.market, coinM, windows)
+	return service.searchResult(ctx, search, service.tables.Market, coinM, windows)
 }
 
-// CoinMSymbols lists the Spot USDT symbols of the coins that have a Binance
+// coinMSymbols lists the Spot USDT symbols of the coins that have a Binance
 // COIN-M perpetual contract, active or not.
-func (service *Service) CoinMSymbols(ctx context.Context) ([]string, error) {
+func (service *Service) coinMSymbols(ctx context.Context) ([]string, error) {
 	assets, err := service.perpetuals.ListCoinMPerpetuals(ctx)
 	if err != nil {
 		return nil, err
@@ -90,10 +170,10 @@ func (service *Service) CoinMSymbols(ctx context.Context) ([]string, error) {
 	return symbols, nil
 }
 
-// CoinM analyzes the Spot USDT instruments of the coins that have a Binance
+// coinM analyzes the Spot USDT instruments of the coins that have a Binance
 // COIN-M perpetual contract.
-func (service *Service) CoinM(ctx context.Context, request analysis.SearchRequest) (Result, error) {
-	symbols, err := service.CoinMSymbols(ctx)
+func (service *Service) coinM(ctx context.Context, request analysis.SearchRequest) (Result, error) {
+	symbols, err := service.coinMSymbols(ctx)
 	if err != nil {
 		return Result{}, err
 	}
@@ -102,7 +182,7 @@ func (service *Service) CoinM(ctx context.Context, request analysis.SearchReques
 	if err != nil {
 		return Result{}, err
 	}
-	return service.searchResult(ctx, search, service.coinM, symbols, windows)
+	return service.searchResult(ctx, search, service.tables.CoinM, symbols, windows)
 }
 
 // markets lists the markets the coin of a Spot USDT symbol trades on.
@@ -147,11 +227,11 @@ func (service *Service) rows(ctx context.Context, ids []int64, windows market.Pr
 	return rows, nil
 }
 
-// Favorites analyzes the active favorites and returns a table row for every
-// favorite, in favorites order. Favorites the analysis skipped or rejected keep
-// the cells that do not depend on it, such as closed indicator values and
-// price histories.
-func (service *Service) Favorites(ctx context.Context, items []favorites.Favorite, request analysis.SearchRequest) (Result, error) {
+// favoritesTable analyzes the active favorites and returns a table row for
+// every favorite, in favorites order. Favorites the analysis skipped or
+// rejected keep the cells that do not depend on it, such as closed indicator
+// values and price histories.
+func (service *Service) favoritesTable(ctx context.Context, items []favorites.Favorite, request analysis.SearchRequest) (Result, error) {
 	windows := market.NewPriceWindows(time.Now())
 	symbols := make([]string, 0, len(items))
 	for _, item := range items {
@@ -175,7 +255,7 @@ func (service *Service) Favorites(ctx context.Context, items []favorites.Favorit
 	if err != nil {
 		return Result{}, err
 	}
-	coinM, err := service.CoinMSymbols(ctx)
+	coinM, err := service.coinMSymbols(ctx)
 	if err != nil {
 		return Result{}, err
 	}
@@ -187,5 +267,5 @@ func (service *Service) Favorites(ctx context.Context, items []favorites.Favorit
 		rows[i].Markets = markets(item.Symbol, coinM)
 		rows[i].AlertCount = item.AlertCount
 	}
-	return Result{Search: search, Table: service.favorites.Build(rows, windows)}, nil
+	return Result{Search: search, Table: service.tables.Favorites.Build(rows, windows)}, nil
 }

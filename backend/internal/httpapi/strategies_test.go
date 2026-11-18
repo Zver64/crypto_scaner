@@ -39,9 +39,12 @@ func TestBacktestStrategyIsAdministratorOnlyAndMapsMissingResources(t *testing.T
 		Stats:      strategy.TradeStats{Count: 1, WinRate: new(1.0), AverageTrade: new(0.098), AverageWin: new(0.098)},
 		BuyAndHold: new(0.05), DCA: new(0.03),
 	}}
-	handler := httpapi.New(logging.New(io.Discard, "error", logging.Options{}), httpapi.Dependencies{
+	handler := newTestHandler(logging.New(io.Discard, "error", logging.Options{}), httpapi.Dependencies{
 		Readiness: readinessStub{}, Analysis: unavailableAnalysis{}, Sessions: roleSessions{}, Strategies: strategies,
 	}, httpapi.Options{})
+	saved := func(n byte, symbol, rest string) string {
+		return `{"strategy":{"kind":"saved","id":"` + strategyID(n).String() + `"},"symbol":"` + symbol + `"` + rest + `}`
+	}
 	for _, test := range []struct {
 		name   string
 		token  string
@@ -51,20 +54,20 @@ func TestBacktestStrategyIsAdministratorOnlyAndMapsMissingResources(t *testing.T
 		// body is the exact response of an empty history.
 		body string
 	}{
-		{name: "user", token: "user", target: "/api/v1/admin/strategies/" + strategyID(1).String() + "/backtest?symbol=btcusdt", status: http.StatusForbidden, code: "administrator_required"},
-		{name: "unknown strategy", token: "admin", target: "/api/v1/admin/strategies/" + strategyID(2).String() + "/backtest?symbol=BTCUSDT", status: http.StatusNotFound, code: "strategy_not_found"},
-		{name: "unknown symbol", token: "admin", target: "/api/v1/admin/strategies/" + strategyID(1).String() + "/backtest?symbol=ETHUSDT", status: http.StatusNotFound, code: "symbol_not_found"},
-		{name: "too heavy", token: "admin", target: "/api/v1/admin/strategies/" + strategyID(5).String() + "/backtest?symbol=BTCUSDT", status: http.StatusServiceUnavailable, code: "backtest_too_heavy"},
-		{name: "busy", token: "admin", target: "/api/v1/admin/strategies/" + strategyID(6).String() + "/backtest?symbol=BTCUSDT", status: http.StatusTooManyRequests, code: "backtest_busy"},
-		{name: "administrator", token: "admin", target: "/api/v1/admin/strategies/" + strategyID(1).String() + "/backtest?symbol=btcusdt&chart=true&from=2026-03-02T03:00:00%2B02:00", status: http.StatusOK},
+		{name: "user", token: "user", target: saved(1, "btcusdt", ""), status: http.StatusForbidden, code: "administrator_required"},
+		{name: "unknown strategy", token: "admin", target: saved(2, "BTCUSDT", ""), status: http.StatusNotFound, code: "strategy_not_found"},
+		{name: "unknown symbol", token: "admin", target: saved(1, "ETHUSDT", ""), status: http.StatusNotFound, code: "symbol_not_found"},
+		{name: "too heavy", token: "admin", target: saved(5, "BTCUSDT", ""), status: http.StatusServiceUnavailable, code: "backtest_too_heavy"},
+		{name: "busy", token: "admin", target: saved(6, "BTCUSDT", ""), status: http.StatusTooManyRequests, code: "backtest_busy"},
+		{name: "administrator", token: "admin", target: saved(1, "btcusdt", `,"chart":true,"from":"2026-03-02T03:00:00+02:00"`), status: http.StatusOK},
 		{
-			name: "empty history", token: "admin", target: "/api/v1/admin/strategies/" + strategyID(3).String() + "/backtest?symbol=BTCUSDT", status: http.StatusOK,
+			name: "empty history", token: "admin", target: saved(3, "BTCUSDT", ""), status: http.StatusOK,
 			body: `{"baselines":{"buy_and_hold":null,"dca":null},"charts":[],"direction":"short","equity":[],"fee":0.001,"from":null,"indicator_columns":[],"interval":"1h",` +
 				`"signal":null,"skipped_alerts":0,"summary":{"max_drawdown":0,"net_profit":0,"stats":` + emptyStats + `},"symbol":"BTCUSDT","to":null,"trades":[]}`,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			request := httptest.NewRequest(http.MethodGet, test.target, nil)
+			request := httptest.NewRequest(http.MethodPost, "/api/v1/admin/strategy-backtests", strings.NewReader(test.target))
 			request.Header.Set("Authorization", "Bearer "+test.token)
 			response := httptest.NewRecorder()
 			handler.ServeHTTP(response, request)
@@ -114,10 +117,12 @@ func TestBacktestStrategyIsAdministratorOnlyAndMapsMissingResources(t *testing.T
 // A draft is backtested from its body as it is, also with an API token.
 func TestBacktestStrategyDraftPassesTheBodyAndMapsFailures(t *testing.T) {
 	strategies := &backtestStrategies{result: strategy.Backtest{Interval: market.IntervalHour, Symbol: "BTCUSDT", Direction: strategy.DirectionSideways}}
-	handler := httpapi.New(logging.New(io.Discard, "error", logging.Options{}), httpapi.Dependencies{
+	handler := newTestHandler(logging.New(io.Discard, "error", logging.Options{}), httpapi.Dependencies{
 		Readiness: readinessStub{}, Analysis: unavailableAnalysis{}, Sessions: roleSessions{}, Strategies: strategies,
 	}, httpapi.Options{})
-	signal := `"signal":true,"direction":"sideways","exit_expression":"","take_profit_expression":"","stop_loss_expression":"","target_ratio":3,"window":12,"symbol":"btcusdt"`
+	draft := func(expression, rest string) string {
+		return `{"strategy":{"kind":"draft","rules":{"expression":"` + expression + `","signal":true,"direction":"sideways","exit_expression":"","take_profit_expression":"","stop_loss_expression":"","target_ratio":3,"window":12}},"symbol":"btcusdt"` + rest + `}`
+	}
 	for _, test := range []struct {
 		name   string
 		token  string
@@ -125,12 +130,15 @@ func TestBacktestStrategyDraftPassesTheBodyAndMapsFailures(t *testing.T) {
 		status int
 		code   string
 	}{
-		{name: "user", token: "user", body: `{"expression":"h_close > 1",` + signal + `}`, status: http.StatusForbidden, code: "administrator_required"},
-		{name: "unknown field", token: "admin", body: `{"expression":"h_close > 1","name":"Draft",` + signal + `}`, status: http.StatusBadRequest, code: "invalid_argument"},
-		{name: "invalid", token: "admin", body: `{"expression":"invalid",` + signal + `}`, status: http.StatusBadRequest, code: "invalid_argument"},
-		{name: "busy", token: "admin", body: `{"expression":"busy",` + signal + `}`, status: http.StatusTooManyRequests, code: "backtest_busy"},
-		{name: "too heavy", token: "admin", body: `{"expression":"heavy",` + signal + `}`, status: http.StatusServiceUnavailable, code: "backtest_too_heavy"},
-		{name: "api token", token: "program", body: `{"expression":"h_close > 1","chart":true,"to":"2026-03-02T03:00:00+02:00",` + signal + `}`, status: http.StatusOK},
+		{name: "user", token: "user", body: draft("h_close > 1", ""), status: http.StatusForbidden, code: "administrator_required"},
+		{name: "unknown field", token: "admin", body: draft("h_close > 1", `,"name":"Draft"`), status: http.StatusBadRequest, code: "invalid_argument"},
+		{name: "saved with rules", token: "admin", body: `{"strategy":{"kind":"saved","id":"` + strategyID(1).String() + `","rules":{}},"symbol":"btcusdt"}`, status: http.StatusBadRequest, code: "invalid_argument"},
+		{name: "unknown kind", token: "admin", body: `{"strategy":{"kind":"stored","id":"` + strategyID(1).String() + `"},"symbol":"btcusdt"}`, status: http.StatusBadRequest, code: "invalid_argument"},
+		{name: "no strategy", token: "admin", body: `{"symbol":"btcusdt"}`, status: http.StatusBadRequest, code: "invalid_argument"},
+		{name: "invalid", token: "admin", body: draft("invalid", ""), status: http.StatusBadRequest, code: "invalid_argument"},
+		{name: "busy", token: "admin", body: draft("busy", ""), status: http.StatusTooManyRequests, code: "backtest_busy"},
+		{name: "too heavy", token: "admin", body: draft("heavy", ""), status: http.StatusServiceUnavailable, code: "backtest_too_heavy"},
+		{name: "api token", token: "program", body: draft("h_close > 1", `,"chart":true,"to":"2026-03-02T03:00:00+02:00"`), status: http.StatusOK},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			request := httptest.NewRequest(http.MethodPost, "/api/v1/admin/strategy-backtests", strings.NewReader(test.body))
@@ -143,6 +151,9 @@ func TestBacktestStrategyDraftPassesTheBodyAndMapsFailures(t *testing.T) {
 			}
 			if test.code != "" {
 				assertErrorCode(t, response, test.code)
+				if test.name == "invalid" {
+					assertProblems(t, response, "unknown variable", "unknown output")
+				}
 				return
 			}
 			assertBacktestDuration(t, response)
@@ -172,7 +183,7 @@ func (strategies *backtestStrategies) BacktestDraft(_ context.Context, item stra
 	strategies.draft, strategies.symbol, strategies.from, strategies.to = item, market.NormalizeSymbol(symbol), from, to
 	switch item.Expression {
 	case "invalid":
-		return strategy.Backtest{}, fmt.Errorf("%w: unknown variable", strategy.ErrInvalidArgument)
+		return strategy.Backtest{}, &strategy.InvalidError{Problems: []string{"unknown variable", "unknown output"}}
 	case "heavy":
 		return strategy.Backtest{}, fmt.Errorf("replay: %w", context.DeadlineExceeded)
 	case "busy":
@@ -247,19 +258,28 @@ func assertErrorCode(t *testing.T, response *httptest.ResponseRecorder, code str
 	}
 }
 
+// assertProblems checks the problems an invalid strategy is reported with.
+func assertProblems(t *testing.T, response *httptest.ResponseRecorder, problems ...string) {
+	t.Helper()
+	var body httpapi.StrategyInvalidResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil || body.Error.Details == nil || !reflect.DeepEqual(body.Error.Details.Problems, problems) {
+		t.Fatalf("error = %s, want problems %q", response.Body.String(), problems)
+	}
+}
+
 // A request the contract rejects names the parameter or body field and why,
 // without kin-openapi's schema and value dumps.
 func TestContractViolationsNameTheirField(t *testing.T) {
-	handler := httpapi.New(logging.New(io.Discard, "error", logging.Options{}), httpapi.Dependencies{
+	handler := newTestHandler(logging.New(io.Discard, "error", logging.Options{}), httpapi.Dependencies{
 		Readiness: readinessStub{}, Analysis: unavailableAnalysis{}, Sessions: roleSessions{}, Strategies: &backtestStrategies{},
 	}, httpapi.Options{})
 	for _, test := range []struct {
 		method, target, body, want string
 	}{
-		{method: http.MethodGet, target: "/api/v1/admin/strategies/1/backtest?symbol=BTCUSDT", want: `Invalid path parameter "strategy_id": '1' does not match pattern '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'`},
-		{method: http.MethodGet, target: "/api/v1/admin/strategies/" + strings.Repeat("x", 1000) + "/backtest?symbol=BTCUSDT", want: `Invalid path parameter "strategy_id": '` + strings.Repeat("x", 199) + "…"},
-		{method: http.MethodGet, target: "/api/v1/admin/strategies/" + strategyID(1).String() + "/backtest?symbol=BTC%2FUSDT", want: `Invalid query parameter "symbol": 'BTC/USDT' does not match pattern '^[A-Za-z0-9]+$'`},
-		{method: http.MethodPost, target: "/api/v1/admin/strategies", body: `{"name":"","expression":"h_close > 1","message":""}`, want: `Invalid request body field "name": minimum string length is 1`},
+		{method: http.MethodGet, target: "/api/v1/admin/strategies/1", want: `Invalid path parameter "strategy_id": '1' does not match pattern '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'`},
+		{method: http.MethodGet, target: "/api/v1/admin/strategies/" + strings.Repeat("x", 1000), want: `Invalid path parameter "strategy_id": '` + strings.Repeat("x", 199) + "…"},
+		{method: http.MethodPost, target: "/api/v1/admin/strategy-backtests", body: `{"strategy":{"kind":"saved","id":"` + strategyID(1).String() + `"},"symbol":"BTC/USDT"}`, want: `Invalid request body field "symbol": string doesn't match the regular expression "^[A-Za-z0-9]+$"`},
+		{method: http.MethodPost, target: "/api/v1/admin/strategies", body: `{"name":"","message":""}`, want: `Invalid request body field "name": minimum string length is 1`},
 	} {
 		t.Run(test.target, func(t *testing.T) {
 			request := httptest.NewRequest(test.method, test.target, strings.NewReader(test.body))
@@ -285,7 +305,7 @@ func TestStrategyCatalogDescribesIndicatorTypesAsCallsWriteThem(t *testing.T) {
 		{Type: "ma", Title: "Moving Average", Parameters: []indicator.ParameterDescriptor{maType}, Outputs: []indicator.OutputDescriptor{{Name: "real"}}},
 		pivot.New().Describe(),
 	}}}
-	handler := httpapi.New(logging.New(io.Discard, "error", logging.Options{}), httpapi.Dependencies{
+	handler := newTestHandler(logging.New(io.Discard, "error", logging.Options{}), httpapi.Dependencies{
 		Readiness: readinessStub{}, Analysis: unavailableAnalysis{}, Sessions: roleSessions{}, Strategies: strategies,
 	}, httpapi.Options{})
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/admin/strategy-catalog", nil)
@@ -303,12 +323,12 @@ func TestStrategyCatalogDescribesIndicatorTypesAsCallsWriteThem(t *testing.T) {
 		t.Fatalf("indicator types = %+v", body.IndicatorTypes)
 	}
 	choice := body.IndicatorTypes[0].Parameters[0]
-	if choice.Kind != httpapi.StrategyIndicatorParameterKindChoice || choice.Choices == nil || (*choice.Choices)[1].Name != nil || (*choice.Choices)[1].Title != "EMA" || choice.Minimum != nil {
+	if choice.Kind != httpapi.Choice || choice.Choices == nil || (*choice.Choices)[1].Name != nil || (*choice.Choices)[1].Title != "EMA" || choice.Minimum != nil {
 		t.Fatalf("choice parameter = %+v", choice)
 	}
 	pivots := body.IndicatorTypes[1]
 	source := pivots.Parameters[len(pivots.Parameters)-1]
-	if source.Kind != httpapi.StrategyIndicatorParameterKindSource || source.Choices == nil {
+	if source.Kind != httpapi.Source || source.Choices == nil {
 		t.Fatalf("source parameter = %+v", source)
 	}
 	var names []string
@@ -322,10 +342,10 @@ func TestStrategyCatalogDescribesIndicatorTypesAsCallsWriteThem(t *testing.T) {
 	if want := append([]string{""}, indicator.CandleFields...); !reflect.DeepEqual(names, want) {
 		t.Fatalf("source choice names = %q, want %q", names, want)
 	}
-	if !reflect.DeepEqual(pivots.Outputs, []httpapi.StrategyIndicatorOutput{{Name: "high", Sparse: true}, {Name: "low", Sparse: true}}) {
+	if !reflect.DeepEqual(pivots.Outputs, []httpapi.IndicatorOutput{{Name: "high", Sparse: true}, {Name: "low", Sparse: true}}) {
 		t.Fatalf("outputs = %+v", pivots.Outputs)
 	}
-	if pivots.Parameters[0].Kind != httpapi.StrategyIndicatorParameterKindInteger || pivots.Parameters[0].Minimum == nil || pivots.Parameters[0].Maximum == nil {
+	if pivots.Parameters[0].Kind != httpapi.Integer || pivots.Parameters[0].Minimum == nil || pivots.Parameters[0].Maximum == nil {
 		t.Fatalf("integer parameter = %+v", pivots.Parameters[0])
 	}
 }

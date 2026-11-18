@@ -342,21 +342,39 @@ func (e Direction) Valid() bool {
 	}
 }
 
+// Defines values for DraftBacktestedStrategyKind.
+const (
+	Draft DraftBacktestedStrategyKind = "draft"
+)
+
+// Valid indicates whether the value is a known member of the DraftBacktestedStrategyKind enum.
+func (e DraftBacktestedStrategyKind) Valid() bool {
+	switch e {
+	case Draft:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for IndicatorParameterKind.
 const (
-	IndicatorParameterKindChoice  IndicatorParameterKind = "choice"
-	IndicatorParameterKindInteger IndicatorParameterKind = "integer"
-	IndicatorParameterKindReal    IndicatorParameterKind = "real"
+	Choice  IndicatorParameterKind = "choice"
+	Integer IndicatorParameterKind = "integer"
+	Real    IndicatorParameterKind = "real"
+	Source  IndicatorParameterKind = "source"
 )
 
 // Valid indicates whether the value is a known member of the IndicatorParameterKind enum.
 func (e IndicatorParameterKind) Valid() bool {
 	switch e {
-	case IndicatorParameterKindChoice:
+	case Choice:
 		return true
-	case IndicatorParameterKindInteger:
+	case Integer:
 		return true
-	case IndicatorParameterKindReal:
+	case Real:
+		return true
+	case Source:
 		return true
 	default:
 		return false
@@ -501,6 +519,24 @@ func (e LivenessResponseStatus) Valid() bool {
 	}
 }
 
+// Defines values for Market.
+const (
+	MarketCoinmPerpetual Market = "coinm_perpetual"
+	MarketSpot           Market = "spot"
+)
+
+// Valid indicates whether the value is a known member of the Market enum.
+func (e Market) Valid() bool {
+	switch e {
+	case MarketCoinmPerpetual:
+		return true
+	case MarketSpot:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for MarketSortDirection.
 const (
 	MarketSortDirectionAsc  MarketSortDirection = "asc"
@@ -536,16 +572,19 @@ func (e MarketSortField) Valid() bool {
 
 // Defines values for MarketUniverse.
 const (
-	CoinmPerpetual MarketUniverse = "coinm_perpetual"
-	Spot           MarketUniverse = "spot"
+	MarketUniverseCoinmPerpetual MarketUniverse = "coinm_perpetual"
+	MarketUniverseFavorites      MarketUniverse = "favorites"
+	MarketUniverseSpot           MarketUniverse = "spot"
 )
 
 // Valid indicates whether the value is a known member of the MarketUniverse enum.
 func (e MarketUniverse) Valid() bool {
 	switch e {
-	case CoinmPerpetual:
+	case MarketUniverseCoinmPerpetual:
 		return true
-	case Spot:
+	case MarketUniverseFavorites:
+		return true
+	case MarketUniverseSpot:
 		return true
 	default:
 		return false
@@ -600,6 +639,21 @@ func (e ReadinessResponseStatus) Valid() bool {
 	case NotReady:
 		return true
 	case Ready:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SavedBacktestedStrategyKind.
+const (
+	Saved SavedBacktestedStrategyKind = "saved"
+)
+
+// Valid indicates whether the value is a known member of the SavedBacktestedStrategyKind enum.
+func (e SavedBacktestedStrategyKind) Valid() bool {
+	switch e {
+	case Saved:
 		return true
 	default:
 		return false
@@ -696,24 +750,15 @@ func (e StrategyCoinSource) Valid() bool {
 	}
 }
 
-// Defines values for StrategyIndicatorParameterKind.
+// Defines values for StrategyInvalidErrorCode.
 const (
-	StrategyIndicatorParameterKindChoice  StrategyIndicatorParameterKind = "choice"
-	StrategyIndicatorParameterKindInteger StrategyIndicatorParameterKind = "integer"
-	StrategyIndicatorParameterKindReal    StrategyIndicatorParameterKind = "real"
-	StrategyIndicatorParameterKindSource  StrategyIndicatorParameterKind = "source"
+	StrategyInvalidErrorCodeInvalidArgument StrategyInvalidErrorCode = "invalid_argument"
 )
 
-// Valid indicates whether the value is a known member of the StrategyIndicatorParameterKind enum.
-func (e StrategyIndicatorParameterKind) Valid() bool {
+// Valid indicates whether the value is a known member of the StrategyInvalidErrorCode enum.
+func (e StrategyInvalidErrorCode) Valid() bool {
 	switch e {
-	case StrategyIndicatorParameterKindChoice:
-		return true
-	case StrategyIndicatorParameterKindInteger:
-		return true
-	case StrategyIndicatorParameterKindReal:
-		return true
-	case StrategyIndicatorParameterKindSource:
+	case StrategyInvalidErrorCodeInvalidArgument:
 		return true
 	default:
 		return false
@@ -1091,6 +1136,11 @@ type BacktestTradeStats struct {
 // reads inside percentile windows and unknown values are left out.
 type BacktestValues map[string]float64
 
+// BacktestedStrategy A saved strategy, by its id, or the rules of an unsaved one.
+type BacktestedStrategy struct {
+	union json.RawMessage
+}
+
 // Candle defines model for Candle.
 type Candle struct {
 	Close            float64   `json:"close"`
@@ -1377,9 +1427,23 @@ type CurrentUser struct {
 // Direction How a strategy trades, long or short, or the price move a signal
 // expects after its entry signals: none in particular (simple), up,
 // down, or sideways. A simple signal has no target ratio or window. A short
-// strategy always has a take profit and a stop loss. Fixed at creation:
-// an update that changes it is refused.
+// strategy always has a take profit and a stop loss.
 type Direction string
+
+// DraftBacktestedStrategy An unsaved strategy or signal, whose rules are checked as a save checks them.
+type DraftBacktestedStrategy struct {
+	Kind DraftBacktestedStrategyKind `json:"kind"`
+
+	// Rules How a strategy trades or what a signal announces, all that a backtest
+	// reads. A signal buys nothing and only announces its entry signals, so
+	// its exit rule, take profit, and stop loss are empty. `signal` and
+	// `direction` are fixed at creation: an update that changes them is
+	// refused.
+	Rules StrategyRules `json:"rules"`
+}
+
+// DraftBacktestedStrategyKind defines model for DraftBacktestedStrategy.Kind.
+type DraftBacktestedStrategyKind string
 
 // ErrorResponse defines model for ErrorResponse.
 type ErrorResponse struct {
@@ -1427,14 +1491,24 @@ type GridLimitsResponse struct {
 
 // IndicatorChoice defines model for IndicatorChoice.
 type IndicatorChoice struct {
-	Title string `json:"title"`
-	Value int    `json:"value"`
+	// Name The name calls write for the choice, such as `volume`; absent for a choice calls write as a number, or, of a source, only by leaving the source out.
+	Name  *string `json:"name,omitempty"`
+	Title string  `json:"title"`
+	Value int     `json:"value"`
 }
 
 // IndicatorConfig defines model for IndicatorConfig.
 type IndicatorConfig struct {
 	Parameters map[string]interface{} `json:"parameters"`
 	Type       string                 `json:"type"`
+}
+
+// IndicatorOutput defines model for IndicatorOutput.
+type IndicatorOutput struct {
+	Name string `json:"name"`
+
+	// Sparse The output is empty on some candles, such as `pivot_high`; it cannot be the source of another indicator.
+	Sparse bool `json:"sparse"`
 }
 
 // IndicatorParameter defines model for IndicatorParameter.
@@ -1444,23 +1518,33 @@ type IndicatorParameter struct {
 	Description string             `json:"description"`
 	Key         string             `json:"key"`
 
-	// Kind `choice` is an integer limited to `choices`; `minimum` and `maximum` bound the other kinds.
+	// Kind `choice` is an integer limited to `choices`; `source` is the
+	// series the indicator reads: one of `choices`, which are candle
+	// fields, or, in strategy calls, a call of another indicator on the
+	// same period; `minimum` and `maximum` bound the other kinds.
 	Kind    IndicatorParameterKind `json:"kind"`
 	Maximum *float64               `json:"maximum,omitempty"`
 	Minimum *float64               `json:"minimum,omitempty"`
 	Title   string                 `json:"title"`
 }
 
-// IndicatorParameterKind `choice` is an integer limited to `choices`; `minimum` and `maximum` bound the other kinds.
+// IndicatorParameterKind `choice` is an integer limited to `choices`; `source` is the
+// series the indicator reads: one of `choices`, which are candle
+// fields, or, in strategy calls, a call of another indicator on the
+// same period; `minimum` and `maximum` bound the other kinds.
 type IndicatorParameterKind string
 
-// IndicatorType defines model for IndicatorType.
+// IndicatorType An indicator the scanner can calculate, as calls name it, such as `bbands`, with the parameters that follow the period.
 type IndicatorType struct {
-	Group   string   `json:"group"`
-	Outputs []string `json:"outputs"`
+	Group string `json:"group"`
+
+	// Outputs The outputs; calls of an indicator with several add the output to the type, such as `bbands_upperband`, calls of one with a single output are named by the type alone.
+	Outputs []IndicatorOutput `json:"outputs"`
 
 	// Overlay Charts draw it over the candles; otherwise in a pane below.
-	Overlay    bool                 `json:"overlay"`
+	Overlay bool `json:"overlay"`
+
+	// Parameters The parameters in the order calls write them after the period.
 	Parameters []IndicatorParameter `json:"parameters"`
 	Title      string               `json:"title"`
 	Type       string               `json:"type"`
@@ -1561,6 +1645,9 @@ type LivenessResponse struct {
 // LivenessResponseStatus defines model for LivenessResponse.Status.
 type LivenessResponseStatus string
 
+// Market A Binance market the coin of a table row trades on.
+type Market string
+
 // MarketAnalysisItem defines model for MarketAnalysisItem.
 type MarketAnalysisItem struct {
 	Evaluations []Evaluation `json:"evaluations"`
@@ -1576,7 +1663,7 @@ type MarketAnalysisRequest struct {
 	Limit *int        `json:"limit,omitempty"`
 	Sort  *MarketSort `json:"sort,omitempty"`
 
-	// Universe Instruments to select. `spot` (the default) selects every active Spot USDT instrument; `coinm_perpetual` selects only those whose coin has a trading Binance COIN-M perpetual contract.
+	// Universe Instruments to select. `spot` (the default) selects every active Spot USDT instrument; `coinm_perpetual` selects only those whose coin has a trading Binance COIN-M perpetual contract; `favorites` selects the current user's favorites: an analysis has a row for every favorite, active or not, in the favorites order, with the favorites table, and an instrument list only the active ones.
 	Universe *MarketUniverse `json:"universe,omitempty"`
 }
 
@@ -1619,7 +1706,7 @@ type MarketTable struct {
 	Rows        []TableRow    `json:"rows"`
 }
 
-// MarketUniverse Instruments to select. `spot` (the default) selects every active Spot USDT instrument; `coinm_perpetual` selects only those whose coin has a trading Binance COIN-M perpetual contract.
+// MarketUniverse Instruments to select. `spot` (the default) selects every active Spot USDT instrument; `coinm_perpetual` selects only those whose coin has a trading Binance COIN-M perpetual contract; `favorites` selects the current user's favorites: an analysis has a row for every favorite, active or not, in the favorites order, with the favorites table, and an instrument list only the active ones.
 type MarketUniverse string
 
 // PriceAlert defines model for PriceAlert.
@@ -1670,6 +1757,16 @@ type ReadinessResponse struct {
 
 // ReadinessResponseStatus defines model for ReadinessResponse.Status.
 type ReadinessResponseStatus string
+
+// SavedBacktestedStrategy A saved strategy or signal, enabled or not.
+type SavedBacktestedStrategy struct {
+	// Id UUIDv7 of a strategy or signal.
+	Id   StrategyID                  `json:"id"`
+	Kind SavedBacktestedStrategyKind `json:"kind"`
+}
+
+// SavedBacktestedStrategyKind defines model for SavedBacktestedStrategy.Kind.
+type SavedBacktestedStrategyKind string
 
 // ScannerIndicator defines model for ScannerIndicator.
 type ScannerIndicator struct {
@@ -1770,84 +1867,31 @@ type SignalWindow int
 
 // Strategy defines model for Strategy.
 type Strategy struct {
-	// CoinSource Which coins the strategy evaluates: `selected`, the coins in `coins`;
-	// or, a signal's only, `favorites`, the administrator's active favorites
-	// whenever they change, or `all`, every active coin.
-	CoinSource StrategyCoinSource `json:"coin_source"`
-
-	// Coins The coins the enabled strategy or signal evaluates, among all coins,
-	// ascending, when `coin_source` is `selected`, which needs at least
-	// one; none otherwise. Every coin must be active: a delisted coin,
-	// chosen or read through `of`, disables the strategy until it is
-	// replaced or removed.
-	Coins StrategyCoins `json:"coins"`
-
-	// Direction How a strategy trades, long or short, or the price move a signal
-	// expects after its entry signals: none in particular (simple), up,
-	// down, or sideways. A simple signal has no target ratio or window. A short
-	// strategy always has a take profit and a stop loss. Fixed at creation:
-	// an update that changes it is refused.
-	Direction Direction `json:"direction"`
-	Enabled   bool      `json:"enabled"`
-
-	// ExitExpression Exit rule, a CEL expression like the entry rule that may also read the
-	// position variables, such as `pnl >= 5 || bars_held >= 24`; empty
-	// without an exit rule. A strategy without an exit rule, take profit,
-	// or stop loss never sells and buys at every entry signal.
-	ExitExpression StrategyExitExpression `json:"exit_expression"`
-
-	// Expression Entry rule, a CEL expression such as `rsi("1d") > 50 && CrossesAbove(ema("1h", 20), ema("1h", 50))`.
-	Expression string `json:"expression"`
+	// Coins The coins a strategy or signal evaluates and, a signal's only, the market caps it announces.
+	Coins   StrategyCoins `json:"coins"`
+	Enabled bool          `json:"enabled"`
 
 	// Id UUIDv7 of a strategy or signal.
 	Id StrategyID `json:"id"`
-
-	// MaxMarketCapUsd A signal's only: a bound, in USD and inclusive, of the current market
-	// caps of the coins the enabled signal announces; null leaves that side
-	// open, and a trading strategy has null for both. With either bound,
-	// coins of an unknown market cap signal nothing. Backtests ignore it.
-	// The minimum must not exceed the maximum.
-	MaxMarketCapUsd *StrategyMarketCapBound `json:"max_market_cap_usd"`
 
 	// Message Text that Telegram alerts show under each title, which names the
 	// strategy, its interval, and the buy, sell, or signal, above the line
 	// of each coin; empty shows none.
 	Message StrategyMessage `json:"message"`
-
-	// MinMarketCapUsd A signal's only: a bound, in USD and inclusive, of the current market
-	// caps of the coins the enabled signal announces; null leaves that side
-	// open, and a trading strategy has null for both. With either bound,
-	// coins of an unknown market cap signal nothing. Backtests ignore it.
-	// The minimum must not exceed the maximum.
-	MinMarketCapUsd *StrategyMarketCapBound `json:"min_market_cap_usd"`
-	Name            string                  `json:"name"`
+	Name    string          `json:"name"`
 
 	// Problem Why a stored rule no longer compiles; present only when valid is false.
 	Problem *string `json:"problem,omitempty"`
 
-	// Signal Whether the strategy is a signal, which buys nothing and only
-	// announces its entry signals, so its exit rule, take profit, and stop
-	// loss are empty. Fixed at creation:
-	// an update that changes it is refused.
-	Signal StrategySignal `json:"signal"`
-
-	// StopLossExpression Stop loss price, a CEL price expression like the take profit, such as
-	// `close("1h") - 2 * atr("1h")`. A signal whose stop loss is not between 0
-	// and its close buys nothing. Empty without a stop loss.
-	StopLossExpression StrategyStopLossExpression `json:"stop_loss_expression"`
-
-	// TakeProfitExpression Take profit price, a CEL price expression evaluated at the close of
-	// the entry signal and fixed for the trade, such as `close("1h") * 1.05` or
-	// `bbands_upperband("1h", 20)`: arithmetic and `Abs`, `Mod`, `Min`,
-	// `Max`, `Prev`, `Percentile`, and `Of` over calls and numbers,
-	// reading the evaluated coin. A signal whose take profit is not above
-	// its close buys nothing. Empty without a take profit.
-	TakeProfitExpression StrategyTakeProfitExpression `json:"take_profit_expression"`
-	TargetRatio          *SignalTargetRatio           `json:"target_ratio"`
+	// Rules How a strategy trades or what a signal announces, all that a backtest
+	// reads. A signal buys nothing and only announces its entry signals, so
+	// its exit rule, take profit, and stop loss are empty. `signal` and
+	// `direction` are fixed at creation: an update that changes them is
+	// refused.
+	Rules StrategyRules `json:"rules"`
 
 	// Valid False when a stored rule no longer compiles; such a strategy is not evaluated.
-	Valid  bool          `json:"valid"`
-	Window *SignalWindow `json:"window"`
+	Valid bool `json:"valid"`
 }
 
 // StrategyBacktest Returns, drawdowns, moves, and fees are fractions, such as 0.012 for 1.2%.
@@ -1861,8 +1905,7 @@ type StrategyBacktest struct {
 	// Direction How a strategy trades, long or short, or the price move a signal
 	// expects after its entry signals: none in particular (simple), up,
 	// down, or sideways. A simple signal has no target ratio or window. A short
-	// strategy always has a take profit and a stop loss. Fixed at creation:
-	// an update that changes it is refused.
+	// strategy always has a take profit and a stop loss.
 	Direction Direction `json:"direction"`
 
 	// DurationMs Server execution time in milliseconds, including service validation, database reads, calculations, requested chart snapshots, and response preparation. Excludes authentication, HTTP request validation, JSON serialization, and network transfer.
@@ -1898,55 +1941,22 @@ type StrategyBacktest struct {
 	Trades []BacktestTrade `json:"trades"`
 }
 
-// StrategyBacktestInput The rules and trading settings of an unsaved strategy or signal, as
-// in `StrategyInput`, and the backtested coin and period.
+// StrategyBacktestInput The backtested strategy, the backtested coin, and the period.
 type StrategyBacktestInput struct {
 	// Chart Include an immutable chart snapshot of the entire evaluated period.
 	Chart *bool `json:"chart,omitempty"`
 
-	// Direction How a strategy trades, long or short, or the price move a signal
-	// expects after its entry signals: none in particular (simple), up,
-	// down, or sideways. A simple signal has no target ratio or window. A short
-	// strategy always has a take profit and a stop loss. Fixed at creation:
-	// an update that changes it is refused.
-	Direction Direction `json:"direction"`
-
-	// ExitExpression Exit rule, a CEL expression like the entry rule that may also read the
-	// position variables, such as `pnl >= 5 || bars_held >= 24`; empty
-	// without an exit rule. A strategy without an exit rule, take profit,
-	// or stop loss never sells and buys at every entry signal.
-	ExitExpression StrategyExitExpression `json:"exit_expression"`
-	Expression     string                 `json:"expression"`
-
 	// From Earliest open time of an evaluated candle; the start of the stored history when absent.
 	From *time.Time `json:"from,omitempty"`
 
-	// Signal Whether the strategy is a signal, which buys nothing and only
-	// announces its entry signals, so its exit rule, take profit, and stop
-	// loss are empty. Fixed at creation:
-	// an update that changes it is refused.
-	Signal StrategySignal `json:"signal"`
-
-	// StopLossExpression Stop loss price, a CEL price expression like the take profit, such as
-	// `close("1h") - 2 * atr("1h")`. A signal whose stop loss is not between 0
-	// and its close buys nothing. Empty without a stop loss.
-	StopLossExpression StrategyStopLossExpression `json:"stop_loss_expression"`
+	// Strategy A saved strategy, by its id, or the rules of an unsaved one.
+	Strategy BacktestedStrategy `json:"strategy"`
 
 	// Symbol Market symbol, such as `BTCUSDT`.
 	Symbol SymbolName `json:"symbol"`
 
-	// TakeProfitExpression Take profit price, a CEL price expression evaluated at the close of
-	// the entry signal and fixed for the trade, such as `close("1h") * 1.05` or
-	// `bbands_upperband("1h", 20)`: arithmetic and `Abs`, `Mod`, `Min`,
-	// `Max`, `Prev`, `Percentile`, and `Of` over calls and numbers,
-	// reading the evaluated coin. A signal whose take profit is not above
-	// its close buys nothing. Empty without a take profit.
-	TakeProfitExpression StrategyTakeProfitExpression `json:"take_profit_expression"`
-	TargetRatio          *SignalTargetRatio           `json:"target_ratio"`
-
 	// To Latest open time of an evaluated candle, not before `from`; the end of the stored history when absent.
-	To     *time.Time    `json:"to,omitempty"`
-	Window *SignalWindow `json:"window"`
+	To *time.Time `json:"to,omitempty"`
 }
 
 // StrategyCatalog defines model for StrategyCatalog.
@@ -1955,7 +1965,7 @@ type StrategyCatalog struct {
 	CandleFields []string `json:"candle_fields"`
 
 	// IndicatorTypes Every indicator type calls may name, configured or not, ordered by type.
-	IndicatorTypes []StrategyIndicatorType `json:"indicator_types"`
+	IndicatorTypes []IndicatorType `json:"indicator_types"`
 
 	// Indicators The configured indicators, in display order.
 	Indicators []StrategyIndicatorCall `json:"indicators"`
@@ -1965,28 +1975,44 @@ type StrategyCatalog struct {
 	PositionVariables []StrategyPositionVariable `json:"position_variables"`
 }
 
-// StrategyCoinSource Which coins the strategy evaluates: `selected`, the coins in `coins`;
+// StrategyCoinSource Which coins the strategy evaluates: `selected`, the coins in `symbols`;
 // or, a signal's only, `favorites`, the administrator's active favorites
 // whenever they change, or `all`, every active coin.
 type StrategyCoinSource string
 
-// StrategyCoins The coins the enabled strategy or signal evaluates, among all coins,
-// ascending, when `coin_source` is `selected`, which needs at least
-// one; none otherwise. Every coin must be active: a delisted coin,
-// chosen or read through `of`, disables the strategy until it is
-// replaced or removed.
-type StrategyCoins = []SymbolName
+// StrategyCoins The coins a strategy or signal evaluates and, a signal's only, the market caps it announces.
+type StrategyCoins struct {
+	// MaxMarketCapUsd A signal's only: a bound, in USD and inclusive, of the current market
+	// caps of the coins the enabled signal announces; null leaves that side
+	// open, and a trading strategy has null for both. With either bound,
+	// coins of an unknown market cap signal nothing. Backtests ignore it.
+	// The minimum must not exceed the maximum.
+	MaxMarketCapUsd *StrategyMarketCapBound `json:"max_market_cap_usd"`
+
+	// MinMarketCapUsd A signal's only: a bound, in USD and inclusive, of the current market
+	// caps of the coins the enabled signal announces; null leaves that side
+	// open, and a trading strategy has null for both. With either bound,
+	// coins of an unknown market cap signal nothing. Backtests ignore it.
+	// The minimum must not exceed the maximum.
+	MinMarketCapUsd *StrategyMarketCapBound `json:"min_market_cap_usd"`
+
+	// Source Which coins the strategy evaluates: `selected`, the coins in `symbols`;
+	// or, a signal's only, `favorites`, the administrator's active favorites
+	// whenever they change, or `all`, every active coin.
+	Source StrategyCoinSource `json:"source"`
+
+	// Symbols The coins the enabled strategy or signal evaluates, among all coins,
+	// ascending, when `source` is `selected`, which needs at least
+	// one; none otherwise. Every coin must be active: a delisted coin,
+	// chosen or read through `of`, disables the strategy until it is
+	// replaced or removed.
+	Symbols []SymbolName `json:"symbols"`
+}
 
 // StrategyEnabled defines model for StrategyEnabled.
 type StrategyEnabled struct {
 	Enabled bool `json:"enabled"`
 }
-
-// StrategyExitExpression Exit rule, a CEL expression like the entry rule that may also read the
-// position variables, such as `pnl >= 5 || bars_held >= 24`; empty
-// without an exit rule. A strategy without an exit rule, take profit,
-// or stop loss never sells and buys at every entry signal.
-type StrategyExitExpression = string
 
 // StrategyID UUIDv7 of a strategy or signal.
 type StrategyID = openapi_types.UUID
@@ -2009,124 +2035,42 @@ type StrategyIndicatorCall struct {
 	Type string `json:"type"`
 }
 
-// StrategyIndicatorChoice defines model for StrategyIndicatorChoice.
-type StrategyIndicatorChoice struct {
-	// Name The name calls write for the choice, such as `volume`; absent for a choice calls write as a number, or, of a source, only by leaving the source out.
-	Name  *string `json:"name,omitempty"`
-	Title string  `json:"title"`
-	Value int     `json:"value"`
-}
-
-// StrategyIndicatorOutput defines model for StrategyIndicatorOutput.
-type StrategyIndicatorOutput struct {
-	Name string `json:"name"`
-
-	// Sparse The output is empty on some candles, such as `pivot_high`; it cannot be the source of another indicator.
-	Sparse bool `json:"sparse"`
-}
-
-// StrategyIndicatorParameter defines model for StrategyIndicatorParameter.
-type StrategyIndicatorParameter struct {
-	Choices *[]StrategyIndicatorChoice `json:"choices,omitempty"`
-	Default float64                    `json:"default"`
-	Key     string                     `json:"key"`
-
-	// Kind `choice` is an integer limited to `choices`; `source` is the
-	// series the indicator reads: one of `choices`, written by its
-	// name, or a call of another indicator on the same period;
-	// `minimum` and `maximum` bound the other kinds.
-	Kind    StrategyIndicatorParameterKind `json:"kind"`
-	Maximum *float64                       `json:"maximum,omitempty"`
-	Minimum *float64                       `json:"minimum,omitempty"`
-	Title   string                         `json:"title"`
-}
-
-// StrategyIndicatorParameterKind `choice` is an integer limited to `choices`; `source` is the
-// series the indicator reads: one of `choices`, written by its
-// name, or a call of another indicator on the same period;
-// `minimum` and `maximum` bound the other kinds.
-type StrategyIndicatorParameterKind string
-
-// StrategyIndicatorType An indicator type as calls name it, such as `bbands`, with the parameters that follow the period.
-type StrategyIndicatorType struct {
-	// Outputs The outputs; calls of an indicator with several add the output to the type, such as `bbands_upperband`, calls of one with a single output are named by the type alone.
-	Outputs []StrategyIndicatorOutput `json:"outputs"`
-
-	// Parameters The parameters in the order calls write them after the period.
-	Parameters []StrategyIndicatorParameter `json:"parameters"`
-	Title      string                       `json:"title"`
-	Type       string                       `json:"type"`
-}
-
 // StrategyInput defines model for StrategyInput.
 type StrategyInput struct {
-	// CoinSource Which coins the strategy evaluates: `selected`, the coins in `coins`;
-	// or, a signal's only, `favorites`, the administrator's active favorites
-	// whenever they change, or `all`, every active coin.
-	CoinSource StrategyCoinSource `json:"coin_source"`
-
-	// Coins The coins the enabled strategy or signal evaluates, among all coins,
-	// ascending, when `coin_source` is `selected`, which needs at least
-	// one; none otherwise. Every coin must be active: a delisted coin,
-	// chosen or read through `of`, disables the strategy until it is
-	// replaced or removed.
-	Coins StrategyCoins `json:"coins"`
-
-	// Direction How a strategy trades, long or short, or the price move a signal
-	// expects after its entry signals: none in particular (simple), up,
-	// down, or sideways. A simple signal has no target ratio or window. A short
-	// strategy always has a take profit and a stop loss. Fixed at creation:
-	// an update that changes it is refused.
-	Direction Direction `json:"direction"`
-	Enabled   bool      `json:"enabled"`
-
-	// ExitExpression Exit rule, a CEL expression like the entry rule that may also read the
-	// position variables, such as `pnl >= 5 || bars_held >= 24`; empty
-	// without an exit rule. A strategy without an exit rule, take profit,
-	// or stop loss never sells and buys at every entry signal.
-	ExitExpression StrategyExitExpression `json:"exit_expression"`
-	Expression     string                 `json:"expression"`
-
-	// MaxMarketCapUsd A signal's only: a bound, in USD and inclusive, of the current market
-	// caps of the coins the enabled signal announces; null leaves that side
-	// open, and a trading strategy has null for both. With either bound,
-	// coins of an unknown market cap signal nothing. Backtests ignore it.
-	// The minimum must not exceed the maximum.
-	MaxMarketCapUsd *StrategyMarketCapBound `json:"max_market_cap_usd"`
+	// Coins The coins a strategy or signal evaluates and, a signal's only, the market caps it announces.
+	Coins   StrategyCoins `json:"coins"`
+	Enabled bool          `json:"enabled"`
 
 	// Message Text that Telegram alerts show under each title, which names the
 	// strategy, its interval, and the buy, sell, or signal, above the line
 	// of each coin; empty shows none.
 	Message StrategyMessage `json:"message"`
+	Name    StrategyName    `json:"name"`
 
-	// MinMarketCapUsd A signal's only: a bound, in USD and inclusive, of the current market
-	// caps of the coins the enabled signal announces; null leaves that side
-	// open, and a trading strategy has null for both. With either bound,
-	// coins of an unknown market cap signal nothing. Backtests ignore it.
-	// The minimum must not exceed the maximum.
-	MinMarketCapUsd *StrategyMarketCapBound `json:"min_market_cap_usd"`
-	Name            string                  `json:"name"`
+	// Rules How a strategy trades or what a signal announces, all that a backtest
+	// reads. A signal buys nothing and only announces its entry signals, so
+	// its exit rule, take profit, and stop loss are empty. `signal` and
+	// `direction` are fixed at creation: an update that changes them is
+	// refused.
+	Rules StrategyRules `json:"rules"`
+}
 
-	// Signal Whether the strategy is a signal, which buys nothing and only
-	// announces its entry signals, so its exit rule, take profit, and stop
-	// loss are empty. Fixed at creation:
-	// an update that changes it is refused.
-	Signal StrategySignal `json:"signal"`
+// StrategyInvalidError defines model for StrategyInvalidError.
+type StrategyInvalidError struct {
+	Code StrategyInvalidErrorCode `json:"code"`
 
-	// StopLossExpression Stop loss price, a CEL price expression like the take profit, such as
-	// `close("1h") - 2 * atr("1h")`. A signal whose stop loss is not between 0
-	// and its close buys nothing. Empty without a stop loss.
-	StopLossExpression StrategyStopLossExpression `json:"stop_loss_expression"`
+	// Details Present when the strategy itself is invalid; absent when the request does not match the contract.
+	Details *StrategyProblems `json:"details,omitempty"`
+	Message string            `json:"message"`
+}
 
-	// TakeProfitExpression Take profit price, a CEL price expression evaluated at the close of
-	// the entry signal and fixed for the trade, such as `close("1h") * 1.05` or
-	// `bbands_upperband("1h", 20)`: arithmetic and `Abs`, `Mod`, `Min`,
-	// `Max`, `Prev`, `Percentile`, and `Of` over calls and numbers,
-	// reading the evaluated coin. A signal whose take profit is not above
-	// its close buys nothing. Empty without a take profit.
-	TakeProfitExpression StrategyTakeProfitExpression `json:"take_profit_expression"`
-	TargetRatio          *SignalTargetRatio           `json:"target_ratio"`
-	Window               *SignalWindow                `json:"window"`
+// StrategyInvalidErrorCode defines model for StrategyInvalidError.Code.
+type StrategyInvalidErrorCode string
+
+// StrategyInvalidResponse An `ErrorResponse` whose details list the problems of an invalid strategy.
+type StrategyInvalidResponse struct {
+	Error     StrategyInvalidError `json:"error"`
+	RequestId string               `json:"request_id"`
 }
 
 // StrategyList defines model for StrategyList.
@@ -2146,6 +2090,9 @@ type StrategyMarketCapBound = float64
 // of each coin; empty shows none.
 type StrategyMessage = string
 
+// StrategyName defines model for StrategyName.
+type StrategyName = string
+
 // StrategyPositionVariable A variable of the open trade, which only exit rules read and only at
 // the latest candle: `entry_price`, the average price of its buys;
 // `pnl`, its return at the close before fees in percent, such as 5 for
@@ -2157,94 +2104,48 @@ type StrategyPositionVariable struct {
 	Name  string `json:"name"`
 }
 
-// StrategySignal Whether the strategy is a signal, which buys nothing and only
-// announces its entry signals, so its exit rule, take profit, and stop
-// loss are empty. Fixed at creation:
-// an update that changes it is refused.
-type StrategySignal = bool
+// StrategyProblems Present when the strategy itself is invalid; absent when the request does not match the contract.
+type StrategyProblems struct {
+	Problems []string `json:"problems"`
+}
 
-// StrategyStopLossExpression Stop loss price, a CEL price expression like the take profit, such as
-// `close("1h") - 2 * atr("1h")`. A signal whose stop loss is not between 0
-// and its close buys nothing. Empty without a stop loss.
-type StrategyStopLossExpression = string
-
-// StrategyTakeProfitExpression Take profit price, a CEL price expression evaluated at the close of
-// the entry signal and fixed for the trade, such as `close("1h") * 1.05` or
-// `bbands_upperband("1h", 20)`: arithmetic and `Abs`, `Mod`, `Min`,
-// `Max`, `Prev`, `Percentile`, and `Of` over calls and numbers,
-// reading the evaluated coin. A signal whose take profit is not above
-// its close buys nothing. Empty without a take profit.
-type StrategyTakeProfitExpression = string
-
-// StrategyUpdate defines model for StrategyUpdate.
-type StrategyUpdate struct {
-	// CoinSource Which coins the strategy evaluates: `selected`, the coins in `coins`;
-	// or, a signal's only, `favorites`, the administrator's active favorites
-	// whenever they change, or `all`, every active coin.
-	CoinSource StrategyCoinSource `json:"coin_source"`
-
-	// Coins The coins the enabled strategy or signal evaluates, among all coins,
-	// ascending, when `coin_source` is `selected`, which needs at least
-	// one; none otherwise. Every coin must be active: a delisted coin,
-	// chosen or read through `of`, disables the strategy until it is
-	// replaced or removed.
-	Coins StrategyCoins `json:"coins"`
-
+// StrategyRules How a strategy trades or what a signal announces, all that a backtest
+// reads. A signal buys nothing and only announces its entry signals, so
+// its exit rule, take profit, and stop loss are empty. `signal` and
+// `direction` are fixed at creation: an update that changes them is
+// refused.
+type StrategyRules struct {
 	// Direction How a strategy trades, long or short, or the price move a signal
 	// expects after its entry signals: none in particular (simple), up,
 	// down, or sideways. A simple signal has no target ratio or window. A short
-	// strategy always has a take profit and a stop loss. Fixed at creation:
-	// an update that changes it is refused.
+	// strategy always has a take profit and a stop loss.
 	Direction Direction `json:"direction"`
 
 	// ExitExpression Exit rule, a CEL expression like the entry rule that may also read the
 	// position variables, such as `pnl >= 5 || bars_held >= 24`; empty
 	// without an exit rule. A strategy without an exit rule, take profit,
 	// or stop loss never sells and buys at every entry signal.
-	ExitExpression StrategyExitExpression `json:"exit_expression"`
+	ExitExpression string `json:"exit_expression"`
 
-	// Expression CEL over indicator and candle field calls, such as `rsi("1h")`,
-	// `bbands_upperband("1d", 20, 2.5)`, or `close("1h")`: comparisons
-	// (`>`, `>=`, `<`, `<=`) of arithmetic (`+`, `-`, `*`, `/`,
-	// parentheses) over calls and numbers, combined with `&&`, `||`,
-	// and `!`. `Prev(x)` and `Prev(x, n)` read `x` one or `n` closed
-	// candles earlier; `Percentile(x, n, p)` is the nearest-rank
+	// Expression Entry rule, CEL over indicator and candle field calls, such as
+	// `rsi("1d") > 50 && CrossesAbove(ema("1h", 20), ema("1h", 50))`:
+	// comparisons (`>`, `>=`, `<`, `<=`) of arithmetic (`+`, `-`, `*`,
+	// `/`, parentheses) over calls and numbers, combined with `&&`,
+	// `||`, and `!`. `Prev(x)` and `Prev(x, n)` read `x` one or `n`
+	// closed candles earlier; `Percentile(x, n, p)` is the nearest-rank
 	// `p`-th percentile of `x` over the `n` closed candles before the
 	// latest one; `CrossesAbove(a, b)` and `CrossesBelow(a, b)` compare
 	// with the previous candle. `Of("BTCUSDT", x)` reads `x` of another
 	// coin, which must be active.
 	Expression string `json:"expression"`
 
-	// MaxMarketCapUsd A signal's only: a bound, in USD and inclusive, of the current market
-	// caps of the coins the enabled signal announces; null leaves that side
-	// open, and a trading strategy has null for both. With either bound,
-	// coins of an unknown market cap signal nothing. Backtests ignore it.
-	// The minimum must not exceed the maximum.
-	MaxMarketCapUsd *StrategyMarketCapBound `json:"max_market_cap_usd"`
-
-	// Message Text that Telegram alerts show under each title, which names the
-	// strategy, its interval, and the buy, sell, or signal, above the line
-	// of each coin; empty shows none.
-	Message StrategyMessage `json:"message"`
-
-	// MinMarketCapUsd A signal's only: a bound, in USD and inclusive, of the current market
-	// caps of the coins the enabled signal announces; null leaves that side
-	// open, and a trading strategy has null for both. With either bound,
-	// coins of an unknown market cap signal nothing. Backtests ignore it.
-	// The minimum must not exceed the maximum.
-	MinMarketCapUsd *StrategyMarketCapBound `json:"min_market_cap_usd"`
-	Name            string                  `json:"name"`
-
-	// Signal Whether the strategy is a signal, which buys nothing and only
-	// announces its entry signals, so its exit rule, take profit, and stop
-	// loss are empty. Fixed at creation:
-	// an update that changes it is refused.
-	Signal StrategySignal `json:"signal"`
+	// Signal Whether the strategy is a signal.
+	Signal bool `json:"signal"`
 
 	// StopLossExpression Stop loss price, a CEL price expression like the take profit, such as
 	// `close("1h") - 2 * atr("1h")`. A signal whose stop loss is not between 0
 	// and its close buys nothing. Empty without a stop loss.
-	StopLossExpression StrategyStopLossExpression `json:"stop_loss_expression"`
+	StopLossExpression string `json:"stop_loss_expression"`
 
 	// TakeProfitExpression Take profit price, a CEL price expression evaluated at the close of
 	// the entry signal and fixed for the trade, such as `close("1h") * 1.05` or
@@ -2252,9 +2153,28 @@ type StrategyUpdate struct {
 	// `Max`, `Prev`, `Percentile`, and `Of` over calls and numbers,
 	// reading the evaluated coin. A signal whose take profit is not above
 	// its close buys nothing. Empty without a take profit.
-	TakeProfitExpression StrategyTakeProfitExpression `json:"take_profit_expression"`
-	TargetRatio          *SignalTargetRatio           `json:"target_ratio"`
-	Window               *SignalWindow                `json:"window"`
+	TakeProfitExpression string             `json:"take_profit_expression"`
+	TargetRatio          *SignalTargetRatio `json:"target_ratio"`
+	Window               *SignalWindow      `json:"window"`
+}
+
+// StrategyUpdate defines model for StrategyUpdate.
+type StrategyUpdate struct {
+	// Coins The coins a strategy or signal evaluates and, a signal's only, the market caps it announces.
+	Coins StrategyCoins `json:"coins"`
+
+	// Message Text that Telegram alerts show under each title, which names the
+	// strategy, its interval, and the buy, sell, or signal, above the line
+	// of each coin; empty shows none.
+	Message StrategyMessage `json:"message"`
+	Name    StrategyName    `json:"name"`
+
+	// Rules How a strategy trades or what a signal announces, all that a backtest
+	// reads. A signal buys nothing and only announces its entry signals, so
+	// its exit rule, take profit, and stop loss are empty. `signal` and
+	// `direction` are fixed at creation: an update that changes them is
+	// refused.
+	Rules StrategyRules `json:"rules"`
 }
 
 // StrategyValidation defines model for StrategyValidation.
@@ -2317,7 +2237,7 @@ type TableColumnKind string
 type TableRow struct {
 	// Cells Cells keyed by column id. Columns of kind `text` and `favorite` have no cell.
 	Cells   map[string]TableCell `json:"cells"`
-	Markets []MarketUniverse     `json:"markets"`
+	Markets []Market             `json:"markets"`
 	Symbol  string               `json:"symbol"`
 }
 
@@ -2373,9 +2293,6 @@ type AlertID = int64
 
 // ApiTokenID defines model for ApiTokenID.
 type ApiTokenID = int64
-
-// RequestID defines model for RequestID.
-type RequestID = string
 
 // ScannerIndicatorID defines model for ScannerIndicatorID.
 type ScannerIndicatorID = int64
@@ -2443,6 +2360,9 @@ type SessionRequired = ErrorResponse
 // StrategyConflict defines model for StrategyConflict.
 type StrategyConflict = ErrorResponse
 
+// StrategyInvalid An `ErrorResponse` whose details list the problems of an invalid strategy.
+type StrategyInvalid = StrategyInvalidResponse
+
 // StrategyNotFound defines model for StrategyNotFound.
 type StrategyNotFound = ErrorResponse
 
@@ -2457,45 +2377,6 @@ type UnprocessableAnalysis = ErrorResponse
 
 // UserNotFound defines model for UserNotFound.
 type UserNotFound = ErrorResponse
-
-// BacktestStrategyParams defines parameters for BacktestStrategy.
-type BacktestStrategyParams struct {
-	// Symbol Market symbol of the replayed coin.
-	Symbol SymbolName `form:"symbol" json:"symbol"`
-
-	// From Earliest open time of an evaluated candle; the start of the stored history when absent.
-	From *time.Time `form:"from,omitempty" json:"from,omitempty"`
-
-	// To Latest open time of an evaluated candle, not before `from`; the end of the stored history when absent.
-	To *time.Time `form:"to,omitempty" json:"to,omitempty"`
-
-	// Chart Include an immutable chart snapshot of the entire evaluated period.
-	Chart *bool `form:"chart,omitempty" json:"chart,omitempty"`
-}
-
-// AnalyzeInstrumentParams defines parameters for AnalyzeInstrument.
-type AnalyzeInstrumentParams struct {
-	// XRequestID Optional caller-provided correlation ID. Unsafe values are replaced.
-	XRequestID *RequestID `json:"X-Request-ID,omitempty"`
-}
-
-// AnalyzeMarketParams defines parameters for AnalyzeMarket.
-type AnalyzeMarketParams struct {
-	// XRequestID Optional caller-provided correlation ID. Unsafe values are replaced.
-	XRequestID *RequestID `json:"X-Request-ID,omitempty"`
-}
-
-// DeleteSessionParams defines parameters for DeleteSession.
-type DeleteSessionParams struct {
-	// XRequestID Optional caller-provided correlation ID. Unsafe values are replaced.
-	XRequestID *RequestID `json:"X-Request-ID,omitempty"`
-}
-
-// CreateSessionParams defines parameters for CreateSession.
-type CreateSessionParams struct {
-	// XRequestID Optional caller-provided correlation ID. Unsafe values are replaced.
-	XRequestID *RequestID `json:"X-Request-ID,omitempty"`
-}
 
 // ListChartIndicatorsParams defines parameters for ListChartIndicators.
 type ListChartIndicatorsParams struct {
@@ -2522,27 +2403,6 @@ type ListInstrumentCandlesParams struct {
 
 	// Limit Maximum number of candles to return.
 	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
-
-	// XRequestID Optional caller-provided correlation ID. Unsafe values are replaced.
-	XRequestID *RequestID `json:"X-Request-ID,omitempty"`
-}
-
-// GetInstrumentGridLimitsParams defines parameters for GetInstrumentGridLimits.
-type GetInstrumentGridLimitsParams struct {
-	// XRequestID Optional caller-provided correlation ID. Unsafe values are replaced.
-	XRequestID *RequestID `json:"X-Request-ID,omitempty"`
-}
-
-// GetLivenessParams defines parameters for GetLiveness.
-type GetLivenessParams struct {
-	// XRequestID Optional caller-provided correlation ID. Unsafe values are replaced.
-	XRequestID *RequestID `json:"X-Request-ID,omitempty"`
-}
-
-// GetReadinessParams defines parameters for GetReadiness.
-type GetReadinessParams struct {
-	// XRequestID Optional caller-provided correlation ID. Unsafe values are replaced.
-	XRequestID *RequestID `json:"X-Request-ID,omitempty"`
 }
 
 // CreateApiTokenJSONRequestBody defines body for CreateApiToken for application/json ContentType.
@@ -2569,8 +2429,8 @@ type SetStrategyEnabledJSONRequestBody = StrategyEnabled
 // UpdateStrategyJSONRequestBody defines body for UpdateStrategy for application/json ContentType.
 type UpdateStrategyJSONRequestBody = StrategyUpdate
 
-// BacktestStrategyDraftJSONRequestBody defines body for BacktestStrategyDraft for application/json ContentType.
-type BacktestStrategyDraftJSONRequestBody = StrategyBacktestInput
+// BacktestStrategyJSONRequestBody defines body for BacktestStrategy for application/json ContentType.
+type BacktestStrategyJSONRequestBody = StrategyBacktestInput
 
 // ValidateStrategyJSONRequestBody defines body for ValidateStrategy for application/json ContentType.
 type ValidateStrategyJSONRequestBody = StrategyValidationInput
@@ -2587,11 +2447,109 @@ type AnalyzeInstrumentJSONRequestBody = InstrumentAnalysisRequest
 // AnalyzeMarketJSONRequestBody defines body for AnalyzeMarket for application/json ContentType.
 type AnalyzeMarketJSONRequestBody = MarketAnalysisRequest
 
-// AnalyzeFavoritesJSONRequestBody defines body for AnalyzeFavorites for application/json ContentType.
-type AnalyzeFavoritesJSONRequestBody = MarketAnalysisRequest
-
 // CreatePriceAlertJSONRequestBody defines body for CreatePriceAlert for application/json ContentType.
 type CreatePriceAlertJSONRequestBody = PriceAlertInput
+
+// AsSavedBacktestedStrategy returns the union data inside the BacktestedStrategy as a SavedBacktestedStrategy
+func (t BacktestedStrategy) AsSavedBacktestedStrategy() (SavedBacktestedStrategy, error) {
+	var body SavedBacktestedStrategy
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromSavedBacktestedStrategy overwrites any union data inside the BacktestedStrategy as the provided SavedBacktestedStrategy
+func (t *BacktestedStrategy) FromSavedBacktestedStrategy(v SavedBacktestedStrategy) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"kind":"saved"}`))
+	t.union = b
+	return err
+}
+
+// MergeSavedBacktestedStrategy performs a merge with any union data inside the BacktestedStrategy, using the provided SavedBacktestedStrategy
+func (t *BacktestedStrategy) MergeSavedBacktestedStrategy(v SavedBacktestedStrategy) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"kind":"saved"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsDraftBacktestedStrategy returns the union data inside the BacktestedStrategy as a DraftBacktestedStrategy
+func (t BacktestedStrategy) AsDraftBacktestedStrategy() (DraftBacktestedStrategy, error) {
+	var body DraftBacktestedStrategy
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromDraftBacktestedStrategy overwrites any union data inside the BacktestedStrategy as the provided DraftBacktestedStrategy
+func (t *BacktestedStrategy) FromDraftBacktestedStrategy(v DraftBacktestedStrategy) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"kind":"draft"}`))
+	t.union = b
+	return err
+}
+
+// MergeDraftBacktestedStrategy performs a merge with any union data inside the BacktestedStrategy, using the provided DraftBacktestedStrategy
+func (t *BacktestedStrategy) MergeDraftBacktestedStrategy(v DraftBacktestedStrategy) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"kind":"draft"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t BacktestedStrategy) Discriminator() (string, error) {
+	var discriminator struct {
+		Discriminator string `json:"kind"`
+	}
+	err := json.Unmarshal(t.union, &discriminator)
+	return discriminator.Discriminator, err
+}
+
+func (t BacktestedStrategy) ValueByDiscriminator() (interface{}, error) {
+	discriminator, err := t.Discriminator()
+	if err != nil {
+		return nil, err
+	}
+	switch discriminator {
+	case "draft":
+		return t.AsDraftBacktestedStrategy()
+	case "saved":
+		return t.AsSavedBacktestedStrategy()
+	default:
+		return nil, errors.New("unknown discriminator value: " + discriminator)
+	}
+}
+
+func (t BacktestedStrategy) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *BacktestedStrategy) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
 
 // AsChartLineShape returns the union data inside the ChartShape as a ChartLineShape
 func (t ChartShape) AsChartLineShape() (ChartLineShape, error) {
@@ -2810,18 +2768,18 @@ type ServerInterface interface {
 	// DeleteStrategy Remove a strategy
 	// (DELETE /api/v1/admin/strategies/{strategy_id})
 	DeleteStrategy(w http.ResponseWriter, r *http.Request, strategyId StrategyID)
+	// GetStrategy Show a strategy
+	// (GET /api/v1/admin/strategies/{strategy_id})
+	GetStrategy(w http.ResponseWriter, r *http.Request, strategyId StrategyID)
 	// SetStrategyEnabled Turn a strategy on or off
 	// (PATCH /api/v1/admin/strategies/{strategy_id})
 	SetStrategyEnabled(w http.ResponseWriter, r *http.Request, strategyId StrategyID)
 	// UpdateStrategy Change a strategy
 	// (PUT /api/v1/admin/strategies/{strategy_id})
 	UpdateStrategy(w http.ResponseWriter, r *http.Request, strategyId StrategyID)
-	// BacktestStrategy Backtest a saved strategy on one coin
-	// (GET /api/v1/admin/strategies/{strategy_id}/backtest)
-	BacktestStrategy(w http.ResponseWriter, r *http.Request, strategyId StrategyID, params BacktestStrategyParams)
-	// BacktestStrategyDraft Backtest an unsaved strategy on one coin
+	// BacktestStrategy Backtest a strategy on one coin
 	// (POST /api/v1/admin/strategy-backtests)
-	BacktestStrategyDraft(w http.ResponseWriter, r *http.Request)
+	BacktestStrategy(w http.ResponseWriter, r *http.Request)
 	// GetStrategyCatalog List what strategy expressions read
 	// (GET /api/v1/admin/strategy-catalog)
 	GetStrategyCatalog(w http.ResponseWriter, r *http.Request)
@@ -2845,25 +2803,22 @@ type ServerInterface interface {
 	UpdatePriceAlert(w http.ResponseWriter, r *http.Request, alertId AlertID)
 	// AnalyzeInstrument Analyze one active instrument
 	// (POST /api/v1/analysis/instruments/{symbol})
-	AnalyzeInstrument(w http.ResponseWriter, r *http.Request, symbol Symbol, params AnalyzeInstrumentParams)
-	// AnalyzeMarket Analyze active instruments in the market
+	AnalyzeInstrument(w http.ResponseWriter, r *http.Request, symbol Symbol)
+	// AnalyzeMarket Analyze the instruments of a universe
 	// (POST /api/v1/analysis/market)
-	AnalyzeMarket(w http.ResponseWriter, r *http.Request, params AnalyzeMarketParams)
+	AnalyzeMarket(w http.ResponseWriter, r *http.Request)
 	// DeleteSession Revoke the current session
 	// (DELETE /api/v1/auth/session)
-	DeleteSession(w http.ResponseWriter, r *http.Request, params DeleteSessionParams)
+	DeleteSession(w http.ResponseWriter, r *http.Request)
 	// CreateSession Exchange Telegram init data for a session token
 	// (POST /api/v1/auth/session)
-	CreateSession(w http.ResponseWriter, r *http.Request, params CreateSessionParams)
+	CreateSession(w http.ResponseWriter, r *http.Request)
 	// ListChartIndicators List the indicators charts of an interval request
 	// (GET /api/v1/chart/indicators)
 	ListChartIndicators(w http.ResponseWriter, r *http.Request, params ListChartIndicatorsParams)
 
 	// (GET /api/v1/favorites)
 	ListFavorites(w http.ResponseWriter, r *http.Request)
-	// AnalyzeFavorites Analyze the current user's active favorite instruments
-	// (POST /api/v1/favorites/analysis)
-	AnalyzeFavorites(w http.ResponseWriter, r *http.Request)
 
 	// (DELETE /api/v1/favorites/{symbol})
 	RemoveFavorite(w http.ResponseWriter, r *http.Request, symbol Symbol, params RemoveFavoriteParams)
@@ -2884,16 +2839,16 @@ type ServerInterface interface {
 	ListInstrumentCandles(w http.ResponseWriter, r *http.Request, symbol Symbol, params ListInstrumentCandlesParams)
 	// GetInstrumentGridLimits Get the Binance spot grid price limits of an instrument
 	// (GET /api/v1/instruments/{symbol}/grid-limits)
-	GetInstrumentGridLimits(w http.ResponseWriter, r *http.Request, symbol Symbol, params GetInstrumentGridLimitsParams)
+	GetInstrumentGridLimits(w http.ResponseWriter, r *http.Request, symbol Symbol)
 	// GetCurrentUser Describe the authenticated user
 	// (GET /api/v1/me)
 	GetCurrentUser(w http.ResponseWriter, r *http.Request)
 	// GetLiveness Check whether the process is alive
 	// (GET /health/live)
-	GetLiveness(w http.ResponseWriter, r *http.Request, params GetLivenessParams)
+	GetLiveness(w http.ResponseWriter, r *http.Request)
 	// GetReadiness Check whether required service dependencies are ready
 	// (GET /health/ready)
-	GetReadiness(w http.ResponseWriter, r *http.Request, params GetReadinessParams)
+	GetReadiness(w http.ResponseWriter, r *http.Request)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -3149,6 +3104,32 @@ func (siw *ServerInterfaceWrapper) DeleteStrategy(w http.ResponseWriter, r *http
 	handler.ServeHTTP(w, r)
 }
 
+// GetStrategy operation middleware
+func (siw *ServerInterfaceWrapper) GetStrategy(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "strategy_id" -------------
+	var strategyId StrategyID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "strategy_id", r.PathValue("strategy_id"), &strategyId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "strategy_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetStrategy(w, r, strategyId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // SetStrategyEnabled operation middleware
 func (siw *ServerInterfaceWrapper) SetStrategyEnabled(w http.ResponseWriter, r *http.Request) {
 
@@ -3204,89 +3185,8 @@ func (siw *ServerInterfaceWrapper) UpdateStrategy(w http.ResponseWriter, r *http
 // BacktestStrategy operation middleware
 func (siw *ServerInterfaceWrapper) BacktestStrategy(w http.ResponseWriter, r *http.Request) {
 
-	var err error
-	_ = err
-
-	// ------------- Path parameter "strategy_id" -------------
-	var strategyId StrategyID
-
-	err = runtime.BindStyledParameterWithOptions("simple", "strategy_id", r.PathValue("strategy_id"), &strategyId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "strategy_id", Err: err})
-		return
-	}
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params BacktestStrategyParams
-
-	// ------------- Required query parameter "symbol" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, true, "symbol", r.URL.Query(), &params.Symbol, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "symbol"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "symbol", Err: err})
-		}
-		return
-	}
-
-	// ------------- Optional query parameter "from" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "from", r.URL.Query(), &params.From, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "from"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "from", Err: err})
-		}
-		return
-	}
-
-	// ------------- Optional query parameter "to" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "to", r.URL.Query(), &params.To, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "to"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "to", Err: err})
-		}
-		return
-	}
-
-	// ------------- Optional query parameter "chart" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "chart", r.URL.Query(), &params.Chart, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "chart"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "chart", Err: err})
-		}
-		return
-	}
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.BacktestStrategy(w, r, strategyId, params)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// BacktestStrategyDraft operation middleware
-func (siw *ServerInterfaceWrapper) BacktestStrategyDraft(w http.ResponseWriter, r *http.Request) {
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.BacktestStrategyDraft(w, r)
+		siw.Handler.BacktestStrategy(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -3457,32 +3357,8 @@ func (siw *ServerInterfaceWrapper) AnalyzeInstrument(w http.ResponseWriter, r *h
 		return
 	}
 
-	// Parameter object where we will unmarshal all parameters from the context
-	var params AnalyzeInstrumentParams
-
-	headers := r.Header
-
-	// ------------- Optional header parameter "X-Request-ID" -------------
-	if valueList, found := headers[http.CanonicalHeaderKey("X-Request-ID")]; found {
-		var XRequestID RequestID
-		n := len(valueList)
-		if n != 1 {
-			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Request-ID", Count: n})
-			return
-		}
-
-		err = runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", valueList[0], &XRequestID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
-		if err != nil {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Request-ID", Err: err})
-			return
-		}
-
-		params.XRequestID = &XRequestID
-
-	}
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.AnalyzeInstrument(w, r, symbol, params)
+		siw.Handler.AnalyzeInstrument(w, r, symbol)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -3495,35 +3371,8 @@ func (siw *ServerInterfaceWrapper) AnalyzeInstrument(w http.ResponseWriter, r *h
 // AnalyzeMarket operation middleware
 func (siw *ServerInterfaceWrapper) AnalyzeMarket(w http.ResponseWriter, r *http.Request) {
 
-	var err error
-	_ = err
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params AnalyzeMarketParams
-
-	headers := r.Header
-
-	// ------------- Optional header parameter "X-Request-ID" -------------
-	if valueList, found := headers[http.CanonicalHeaderKey("X-Request-ID")]; found {
-		var XRequestID RequestID
-		n := len(valueList)
-		if n != 1 {
-			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Request-ID", Count: n})
-			return
-		}
-
-		err = runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", valueList[0], &XRequestID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
-		if err != nil {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Request-ID", Err: err})
-			return
-		}
-
-		params.XRequestID = &XRequestID
-
-	}
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.AnalyzeMarket(w, r, params)
+		siw.Handler.AnalyzeMarket(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -3536,35 +3385,8 @@ func (siw *ServerInterfaceWrapper) AnalyzeMarket(w http.ResponseWriter, r *http.
 // DeleteSession operation middleware
 func (siw *ServerInterfaceWrapper) DeleteSession(w http.ResponseWriter, r *http.Request) {
 
-	var err error
-	_ = err
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params DeleteSessionParams
-
-	headers := r.Header
-
-	// ------------- Optional header parameter "X-Request-ID" -------------
-	if valueList, found := headers[http.CanonicalHeaderKey("X-Request-ID")]; found {
-		var XRequestID RequestID
-		n := len(valueList)
-		if n != 1 {
-			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Request-ID", Count: n})
-			return
-		}
-
-		err = runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", valueList[0], &XRequestID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
-		if err != nil {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Request-ID", Err: err})
-			return
-		}
-
-		params.XRequestID = &XRequestID
-
-	}
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.DeleteSession(w, r, params)
+		siw.Handler.DeleteSession(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -3577,35 +3399,8 @@ func (siw *ServerInterfaceWrapper) DeleteSession(w http.ResponseWriter, r *http.
 // CreateSession operation middleware
 func (siw *ServerInterfaceWrapper) CreateSession(w http.ResponseWriter, r *http.Request) {
 
-	var err error
-	_ = err
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params CreateSessionParams
-
-	headers := r.Header
-
-	// ------------- Optional header parameter "X-Request-ID" -------------
-	if valueList, found := headers[http.CanonicalHeaderKey("X-Request-ID")]; found {
-		var XRequestID RequestID
-		n := len(valueList)
-		if n != 1 {
-			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Request-ID", Count: n})
-			return
-		}
-
-		err = runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", valueList[0], &XRequestID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
-		if err != nil {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Request-ID", Err: err})
-			return
-		}
-
-		params.XRequestID = &XRequestID
-
-	}
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.CreateSession(w, r, params)
+		siw.Handler.CreateSession(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -3653,20 +3448,6 @@ func (siw *ServerInterfaceWrapper) ListFavorites(w http.ResponseWriter, r *http.
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListFavorites(w, r)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// AnalyzeFavorites operation middleware
-func (siw *ServerInterfaceWrapper) AnalyzeFavorites(w http.ResponseWriter, r *http.Request) {
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.AnalyzeFavorites(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -3886,27 +3667,6 @@ func (siw *ServerInterfaceWrapper) ListInstrumentCandles(w http.ResponseWriter, 
 		return
 	}
 
-	headers := r.Header
-
-	// ------------- Optional header parameter "X-Request-ID" -------------
-	if valueList, found := headers[http.CanonicalHeaderKey("X-Request-ID")]; found {
-		var XRequestID RequestID
-		n := len(valueList)
-		if n != 1 {
-			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Request-ID", Count: n})
-			return
-		}
-
-		err = runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", valueList[0], &XRequestID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
-		if err != nil {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Request-ID", Err: err})
-			return
-		}
-
-		params.XRequestID = &XRequestID
-
-	}
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListInstrumentCandles(w, r, symbol, params)
 	}))
@@ -3933,32 +3693,8 @@ func (siw *ServerInterfaceWrapper) GetInstrumentGridLimits(w http.ResponseWriter
 		return
 	}
 
-	// Parameter object where we will unmarshal all parameters from the context
-	var params GetInstrumentGridLimitsParams
-
-	headers := r.Header
-
-	// ------------- Optional header parameter "X-Request-ID" -------------
-	if valueList, found := headers[http.CanonicalHeaderKey("X-Request-ID")]; found {
-		var XRequestID RequestID
-		n := len(valueList)
-		if n != 1 {
-			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Request-ID", Count: n})
-			return
-		}
-
-		err = runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", valueList[0], &XRequestID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
-		if err != nil {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Request-ID", Err: err})
-			return
-		}
-
-		params.XRequestID = &XRequestID
-
-	}
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetInstrumentGridLimits(w, r, symbol, params)
+		siw.Handler.GetInstrumentGridLimits(w, r, symbol)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -3985,35 +3721,8 @@ func (siw *ServerInterfaceWrapper) GetCurrentUser(w http.ResponseWriter, r *http
 // GetLiveness operation middleware
 func (siw *ServerInterfaceWrapper) GetLiveness(w http.ResponseWriter, r *http.Request) {
 
-	var err error
-	_ = err
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params GetLivenessParams
-
-	headers := r.Header
-
-	// ------------- Optional header parameter "X-Request-ID" -------------
-	if valueList, found := headers[http.CanonicalHeaderKey("X-Request-ID")]; found {
-		var XRequestID RequestID
-		n := len(valueList)
-		if n != 1 {
-			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Request-ID", Count: n})
-			return
-		}
-
-		err = runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", valueList[0], &XRequestID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
-		if err != nil {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Request-ID", Err: err})
-			return
-		}
-
-		params.XRequestID = &XRequestID
-
-	}
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetLiveness(w, r, params)
+		siw.Handler.GetLiveness(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -4026,35 +3735,8 @@ func (siw *ServerInterfaceWrapper) GetLiveness(w http.ResponseWriter, r *http.Re
 // GetReadiness operation middleware
 func (siw *ServerInterfaceWrapper) GetReadiness(w http.ResponseWriter, r *http.Request) {
 
-	var err error
-	_ = err
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params GetReadinessParams
-
-	headers := r.Header
-
-	// ------------- Optional header parameter "X-Request-ID" -------------
-	if valueList, found := headers[http.CanonicalHeaderKey("X-Request-ID")]; found {
-		var XRequestID RequestID
-		n := len(valueList)
-		if n != 1 {
-			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Request-ID", Count: n})
-			return
-		}
-
-		err = runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", valueList[0], &XRequestID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
-		if err != nil {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Request-ID", Err: err})
-			return
-		}
-
-		params.XRequestID = &XRequestID
-
-	}
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetReadiness(w, r, params)
+		siw.Handler.GetReadiness(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -4197,7 +3879,6 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/favorites", wrapper.ListFavorites)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/favorites/{symbol}", wrapper.RemoveFavorite)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/favorites/{symbol}", wrapper.AddFavorite)
-	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/favorites/analysis", wrapper.AnalyzeFavorites)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/instruments/{symbol}/alerts", wrapper.ListPriceAlerts)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/instruments/{symbol}/alerts", wrapper.CreatePriceAlert)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/alerts/{alert_id}", wrapper.DeletePriceAlert)
@@ -4217,10 +3898,10 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/admin/strategies", wrapper.ListStrategies)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/admin/strategies", wrapper.CreateStrategy)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/admin/strategies/{strategy_id}", wrapper.DeleteStrategy)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/admin/strategies/{strategy_id}", wrapper.GetStrategy)
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/admin/strategies/{strategy_id}", wrapper.SetStrategyEnabled)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/admin/strategies/{strategy_id}", wrapper.UpdateStrategy)
-	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/admin/strategies/{strategy_id}/backtest", wrapper.BacktestStrategy)
-	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/admin/strategy-backtests", wrapper.BacktestStrategyDraft)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/admin/strategy-backtests", wrapper.BacktestStrategy)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/admin/candle-history-loads", wrapper.GetCandleHistoryLoad)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/admin/candle-history-loads", wrapper.StartCandleHistoryLoad)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/admin/api-tokens", wrapper.ListApiTokens)
@@ -4230,14 +3911,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	return m
 }
 
-type AccessDeniedResponseHeaders struct {
-	XRequestID string
-}
-type AccessDeniedJSONResponse struct {
-	Body ErrorResponse
-
-	Headers AccessDeniedResponseHeaders
-}
+type AccessDeniedJSONResponse ErrorResponse
 
 type AdministratorProtectedJSONResponse ErrorResponse
 
@@ -4247,118 +3921,43 @@ type AlertConflictJSONResponse ErrorResponse
 
 type AlertNotFoundJSONResponse ErrorResponse
 
-type AnalysisUnavailableResponseHeaders struct {
-	XRequestID string
-}
-type AnalysisUnavailableJSONResponse struct {
-	Body ErrorResponse
-
-	Headers AnalysisUnavailableResponseHeaders
-}
+type AnalysisUnavailableJSONResponse ErrorResponse
 
 type ApiTokenNotFoundJSONResponse ErrorResponse
 
-type BacktestBusyResponseHeaders struct {
-	XRequestID string
-}
-type BacktestBusyJSONResponse struct {
-	Body ErrorResponse
+type BacktestBusyJSONResponse ErrorResponse
 
-	Headers BacktestBusyResponseHeaders
-}
+type BacktestTooHeavyJSONResponse ErrorResponse
 
-type BacktestTooHeavyResponseHeaders struct {
-	XRequestID string
-}
-type BacktestTooHeavyJSONResponse struct {
-	Body ErrorResponse
-
-	Headers BacktestTooHeavyResponseHeaders
-}
-
-type BadRequestResponseHeaders struct {
-	XRequestID string
-}
-type BadRequestJSONResponse struct {
-	Body ErrorResponse
-
-	Headers BadRequestResponseHeaders
-}
+type BadRequestJSONResponse ErrorResponse
 
 type FavoriteConflictJSONResponse ErrorResponse
 
 type FavoriteNotFoundJSONResponse ErrorResponse
 
-type HistoryLoadRunningResponseHeaders struct {
-	XRequestID string
-}
-type HistoryLoadRunningJSONResponse struct {
-	Body ErrorResponse
+type HistoryLoadRunningJSONResponse ErrorResponse
 
-	Headers HistoryLoadRunningResponseHeaders
-}
+type InsufficientDataJSONResponse ErrorResponse
 
-type InsufficientDataResponseHeaders struct {
-	XRequestID string
-}
-type InsufficientDataJSONResponse struct {
-	Body ErrorResponse
-
-	Headers InsufficientDataResponseHeaders
-}
-
-type InternalErrorResponseHeaders struct {
-	XRequestID string
-}
-type InternalErrorJSONResponse struct {
-	Body ErrorResponse
-
-	Headers InternalErrorResponseHeaders
-}
+type InternalErrorJSONResponse ErrorResponse
 
 type ScannerIndicatorConflictJSONResponse ErrorResponse
 
 type ScannerIndicatorNotFoundJSONResponse ErrorResponse
 
-type SessionRequiredResponseHeaders struct {
-	XRequestID string
-}
-type SessionRequiredJSONResponse struct {
-	Body ErrorResponse
-
-	Headers SessionRequiredResponseHeaders
-}
+type SessionRequiredJSONResponse ErrorResponse
 
 type StrategyConflictJSONResponse ErrorResponse
 
+type StrategyInvalidJSONResponse StrategyInvalidResponse
+
 type StrategyNotFoundJSONResponse ErrorResponse
 
-type SymbolNotFoundResponseHeaders struct {
-	XRequestID string
-}
-type SymbolNotFoundJSONResponse struct {
-	Body ErrorResponse
+type SymbolNotFoundJSONResponse ErrorResponse
 
-	Headers SymbolNotFoundResponseHeaders
-}
+type UnauthenticatedJSONResponse ErrorResponse
 
-type UnauthenticatedResponseHeaders struct {
-	XRequestID string
-}
-type UnauthenticatedJSONResponse struct {
-	Body ErrorResponse
-
-	Headers UnauthenticatedResponseHeaders
-}
-
-type UnprocessableAnalysisResponseHeaders struct {
-	XRequestID string
-}
-type UnprocessableAnalysisJSONResponse struct {
-	Body ErrorResponse
-
-	Headers UnprocessableAnalysisResponseHeaders
-}
+type UnprocessableAnalysisJSONResponse ErrorResponse
 
 type UserNotFoundJSONResponse ErrorResponse
 
@@ -4388,11 +3987,10 @@ type ListApiTokens401JSONResponse struct{ UnauthenticatedJSONResponse }
 func (response ListApiTokens401JSONResponse) VisitListApiTokensResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
@@ -4403,11 +4001,10 @@ type ListApiTokens403JSONResponse struct{ SessionRequiredJSONResponse }
 func (response ListApiTokens403JSONResponse) VisitListApiTokensResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
@@ -4418,11 +4015,10 @@ type ListApiTokens500JSONResponse struct{ InternalErrorJSONResponse }
 func (response ListApiTokens500JSONResponse) VisitListApiTokensResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
@@ -4455,11 +4051,10 @@ type CreateApiToken400JSONResponse struct{ BadRequestJSONResponse }
 func (response CreateApiToken400JSONResponse) VisitCreateApiTokenResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(400)
 	_, err := buf.WriteTo(w)
 	return err
@@ -4470,11 +4065,10 @@ type CreateApiToken401JSONResponse struct{ UnauthenticatedJSONResponse }
 func (response CreateApiToken401JSONResponse) VisitCreateApiTokenResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
@@ -4485,11 +4079,10 @@ type CreateApiToken403JSONResponse struct{ SessionRequiredJSONResponse }
 func (response CreateApiToken403JSONResponse) VisitCreateApiTokenResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
@@ -4500,11 +4093,10 @@ type CreateApiToken500JSONResponse struct{ InternalErrorJSONResponse }
 func (response CreateApiToken500JSONResponse) VisitCreateApiTokenResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
@@ -4531,11 +4123,10 @@ type DeleteApiToken401JSONResponse struct{ UnauthenticatedJSONResponse }
 func (response DeleteApiToken401JSONResponse) VisitDeleteApiTokenResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
@@ -4546,11 +4137,10 @@ type DeleteApiToken403JSONResponse struct{ SessionRequiredJSONResponse }
 func (response DeleteApiToken403JSONResponse) VisitDeleteApiTokenResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
@@ -4575,11 +4165,10 @@ type DeleteApiToken500JSONResponse struct{ InternalErrorJSONResponse }
 func (response DeleteApiToken500JSONResponse) VisitDeleteApiTokenResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
@@ -4619,11 +4208,10 @@ type GetCandleHistoryLoad401JSONResponse struct{ UnauthenticatedJSONResponse }
 func (response GetCandleHistoryLoad401JSONResponse) VisitGetCandleHistoryLoadResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
@@ -4650,11 +4238,10 @@ type GetCandleHistoryLoad500JSONResponse struct{ InternalErrorJSONResponse }
 func (response GetCandleHistoryLoad500JSONResponse) VisitGetCandleHistoryLoadResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
@@ -4687,11 +4274,10 @@ type StartCandleHistoryLoad400JSONResponse struct{ BadRequestJSONResponse }
 func (response StartCandleHistoryLoad400JSONResponse) VisitStartCandleHistoryLoadResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(400)
 	_, err := buf.WriteTo(w)
 	return err
@@ -4702,11 +4288,10 @@ type StartCandleHistoryLoad401JSONResponse struct{ UnauthenticatedJSONResponse }
 func (response StartCandleHistoryLoad401JSONResponse) VisitStartCandleHistoryLoadResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
@@ -4717,11 +4302,10 @@ type StartCandleHistoryLoad403JSONResponse struct{ SessionRequiredJSONResponse }
 func (response StartCandleHistoryLoad403JSONResponse) VisitStartCandleHistoryLoadResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
@@ -4732,11 +4316,10 @@ type StartCandleHistoryLoad404JSONResponse struct{ SymbolNotFoundJSONResponse }
 func (response StartCandleHistoryLoad404JSONResponse) VisitStartCandleHistoryLoadResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(404)
 	_, err := buf.WriteTo(w)
 	return err
@@ -4747,11 +4330,10 @@ type StartCandleHistoryLoad409JSONResponse struct{ HistoryLoadRunningJSONRespons
 func (response StartCandleHistoryLoad409JSONResponse) VisitStartCandleHistoryLoadResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(409)
 	_, err := buf.WriteTo(w)
 	return err
@@ -4762,11 +4344,10 @@ type StartCandleHistoryLoad500JSONResponse struct{ InternalErrorJSONResponse }
 func (response StartCandleHistoryLoad500JSONResponse) VisitStartCandleHistoryLoadResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
@@ -4798,11 +4379,10 @@ type ListIndicatorTypes401JSONResponse struct{ UnauthenticatedJSONResponse }
 func (response ListIndicatorTypes401JSONResponse) VisitListIndicatorTypesResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
@@ -4829,11 +4409,10 @@ type ListIndicatorTypes500JSONResponse struct{ InternalErrorJSONResponse }
 func (response ListIndicatorTypes500JSONResponse) VisitListIndicatorTypesResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
@@ -4866,11 +4445,10 @@ type ReorderScannerIndicators400JSONResponse struct{ BadRequestJSONResponse }
 func (response ReorderScannerIndicators400JSONResponse) VisitReorderScannerIndicatorsResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(400)
 	_, err := buf.WriteTo(w)
 	return err
@@ -4881,11 +4459,10 @@ type ReorderScannerIndicators401JSONResponse struct{ UnauthenticatedJSONResponse
 func (response ReorderScannerIndicators401JSONResponse) VisitReorderScannerIndicatorsResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
@@ -4928,11 +4505,10 @@ type ReorderScannerIndicators500JSONResponse struct{ InternalErrorJSONResponse }
 func (response ReorderScannerIndicators500JSONResponse) VisitReorderScannerIndicatorsResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
@@ -4964,11 +4540,10 @@ type ListScannerIndicators401JSONResponse struct{ UnauthenticatedJSONResponse }
 func (response ListScannerIndicators401JSONResponse) VisitListScannerIndicatorsResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
@@ -4995,11 +4570,10 @@ type ListScannerIndicators500JSONResponse struct{ InternalErrorJSONResponse }
 func (response ListScannerIndicators500JSONResponse) VisitListScannerIndicatorsResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
@@ -5032,11 +4606,10 @@ type CreateScannerIndicator400JSONResponse struct{ BadRequestJSONResponse }
 func (response CreateScannerIndicator400JSONResponse) VisitCreateScannerIndicatorResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(400)
 	_, err := buf.WriteTo(w)
 	return err
@@ -5047,11 +4620,10 @@ type CreateScannerIndicator401JSONResponse struct{ UnauthenticatedJSONResponse }
 func (response CreateScannerIndicator401JSONResponse) VisitCreateScannerIndicatorResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
@@ -5094,11 +4666,10 @@ type CreateScannerIndicator500JSONResponse struct{ InternalErrorJSONResponse }
 func (response CreateScannerIndicator500JSONResponse) VisitCreateScannerIndicatorResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
@@ -5125,11 +4696,10 @@ type DeleteScannerIndicator401JSONResponse struct{ UnauthenticatedJSONResponse }
 func (response DeleteScannerIndicator401JSONResponse) VisitDeleteScannerIndicatorResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
@@ -5172,11 +4742,10 @@ type DeleteScannerIndicator500JSONResponse struct{ InternalErrorJSONResponse }
 func (response DeleteScannerIndicator500JSONResponse) VisitDeleteScannerIndicatorResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
@@ -5210,11 +4779,10 @@ type UpdateScannerIndicator400JSONResponse struct{ BadRequestJSONResponse }
 func (response UpdateScannerIndicator400JSONResponse) VisitUpdateScannerIndicatorResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(400)
 	_, err := buf.WriteTo(w)
 	return err
@@ -5225,11 +4793,10 @@ type UpdateScannerIndicator401JSONResponse struct{ UnauthenticatedJSONResponse }
 func (response UpdateScannerIndicator401JSONResponse) VisitUpdateScannerIndicatorResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
@@ -5288,11 +4855,10 @@ type UpdateScannerIndicator500JSONResponse struct{ InternalErrorJSONResponse }
 func (response UpdateScannerIndicator500JSONResponse) VisitUpdateScannerIndicatorResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
@@ -5324,11 +4890,10 @@ type ListStrategies401JSONResponse struct{ UnauthenticatedJSONResponse }
 func (response ListStrategies401JSONResponse) VisitListStrategiesResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
@@ -5355,11 +4920,10 @@ type ListStrategies500JSONResponse struct{ InternalErrorJSONResponse }
 func (response ListStrategies500JSONResponse) VisitListStrategiesResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
@@ -5387,16 +4951,15 @@ func (response CreateStrategy201JSONResponse) VisitCreateStrategyResponse(w http
 	return err
 }
 
-type CreateStrategy400JSONResponse struct{ BadRequestJSONResponse }
+type CreateStrategy400JSONResponse struct{ StrategyInvalidJSONResponse }
 
 func (response CreateStrategy400JSONResponse) VisitCreateStrategyResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(400)
 	_, err := buf.WriteTo(w)
 	return err
@@ -5407,11 +4970,10 @@ type CreateStrategy401JSONResponse struct{ UnauthenticatedJSONResponse }
 func (response CreateStrategy401JSONResponse) VisitCreateStrategyResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
@@ -5452,11 +5014,10 @@ type CreateStrategy500JSONResponse struct{ InternalErrorJSONResponse }
 func (response CreateStrategy500JSONResponse) VisitCreateStrategyResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
@@ -5483,11 +5044,10 @@ type DeleteStrategy401JSONResponse struct{ UnauthenticatedJSONResponse }
 func (response DeleteStrategy401JSONResponse) VisitDeleteStrategyResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
@@ -5528,11 +5088,90 @@ type DeleteStrategy500JSONResponse struct{ InternalErrorJSONResponse }
 func (response DeleteStrategy500JSONResponse) VisitDeleteStrategyResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetStrategyRequestObject struct {
+	StrategyId StrategyID `json:"strategy_id"`
+}
+
+type GetStrategyResponseObject interface {
+	VisitGetStrategyResponse(w http.ResponseWriter) error
+}
+
+type GetStrategy200JSONResponse Strategy
+
+func (response GetStrategy200JSONResponse) VisitGetStrategyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetStrategy401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response GetStrategy401JSONResponse) VisitGetStrategyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetStrategy403JSONResponse struct {
+	AdministratorRequiredJSONResponse
+}
+
+func (response GetStrategy403JSONResponse) VisitGetStrategyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetStrategy404JSONResponse struct{ StrategyNotFoundJSONResponse }
+
+func (response GetStrategy404JSONResponse) VisitGetStrategyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetStrategy500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response GetStrategy500JSONResponse) VisitGetStrategyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
@@ -5561,16 +5200,15 @@ func (response SetStrategyEnabled200JSONResponse) VisitSetStrategyEnabledRespons
 	return err
 }
 
-type SetStrategyEnabled400JSONResponse struct{ BadRequestJSONResponse }
+type SetStrategyEnabled400JSONResponse struct{ StrategyInvalidJSONResponse }
 
 func (response SetStrategyEnabled400JSONResponse) VisitSetStrategyEnabledResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(400)
 	_, err := buf.WriteTo(w)
 	return err
@@ -5581,11 +5219,10 @@ type SetStrategyEnabled401JSONResponse struct{ UnauthenticatedJSONResponse }
 func (response SetStrategyEnabled401JSONResponse) VisitSetStrategyEnabledResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
@@ -5626,11 +5263,10 @@ type SetStrategyEnabled500JSONResponse struct{ InternalErrorJSONResponse }
 func (response SetStrategyEnabled500JSONResponse) VisitSetStrategyEnabledResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
@@ -5659,16 +5295,15 @@ func (response UpdateStrategy200JSONResponse) VisitUpdateStrategyResponse(w http
 	return err
 }
 
-type UpdateStrategy400JSONResponse struct{ BadRequestJSONResponse }
+type UpdateStrategy400JSONResponse struct{ StrategyInvalidJSONResponse }
 
 func (response UpdateStrategy400JSONResponse) VisitUpdateStrategyResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(400)
 	_, err := buf.WriteTo(w)
 	return err
@@ -5679,11 +5314,10 @@ type UpdateStrategy401JSONResponse struct{ UnauthenticatedJSONResponse }
 func (response UpdateStrategy401JSONResponse) VisitUpdateStrategyResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
@@ -5738,19 +5372,17 @@ type UpdateStrategy500JSONResponse struct{ InternalErrorJSONResponse }
 func (response UpdateStrategy500JSONResponse) VisitUpdateStrategyResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
 }
 
 type BacktestStrategyRequestObject struct {
-	StrategyId StrategyID `json:"strategy_id"`
-	Params     BacktestStrategyParams
+	Body *BacktestStrategyJSONRequestBody
 }
 
 type BacktestStrategyResponseObject interface {
@@ -5771,16 +5403,15 @@ func (response BacktestStrategy200JSONResponse) VisitBacktestStrategyResponse(w 
 	return err
 }
 
-type BacktestStrategy400JSONResponse struct{ BadRequestJSONResponse }
+type BacktestStrategy400JSONResponse struct{ StrategyInvalidJSONResponse }
 
 func (response BacktestStrategy400JSONResponse) VisitBacktestStrategyResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(400)
 	_, err := buf.WriteTo(w)
 	return err
@@ -5791,11 +5422,10 @@ type BacktestStrategy401JSONResponse struct{ UnauthenticatedJSONResponse }
 func (response BacktestStrategy401JSONResponse) VisitBacktestStrategyResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
@@ -5817,23 +5447,15 @@ func (response BacktestStrategy403JSONResponse) VisitBacktestStrategyResponse(w 
 	return err
 }
 
-type BacktestStrategy404ResponseHeaders struct {
-	XRequestID string
-}
-
-type BacktestStrategy404JSONResponse struct {
-	Body    ErrorResponse
-	Headers BacktestStrategy404ResponseHeaders
-}
+type BacktestStrategy404JSONResponse ErrorResponse
 
 func (response BacktestStrategy404JSONResponse) VisitBacktestStrategyResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(404)
 	_, err := buf.WriteTo(w)
 	return err
@@ -5844,11 +5466,10 @@ type BacktestStrategy429JSONResponse struct{ BacktestBusyJSONResponse }
 func (response BacktestStrategy429JSONResponse) VisitBacktestStrategyResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(429)
 	_, err := buf.WriteTo(w)
 	return err
@@ -5859,11 +5480,10 @@ type BacktestStrategy500JSONResponse struct{ InternalErrorJSONResponse }
 func (response BacktestStrategy500JSONResponse) VisitBacktestStrategyResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
@@ -5874,139 +5494,10 @@ type BacktestStrategy503JSONResponse struct{ BacktestTooHeavyJSONResponse }
 func (response BacktestStrategy503JSONResponse) VisitBacktestStrategyResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
-	w.WriteHeader(503)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type BacktestStrategyDraftRequestObject struct {
-	Body *BacktestStrategyDraftJSONRequestBody
-}
-
-type BacktestStrategyDraftResponseObject interface {
-	VisitBacktestStrategyDraftResponse(w http.ResponseWriter) error
-}
-
-type BacktestStrategyDraft200JSONResponse StrategyBacktest
-
-func (response BacktestStrategyDraft200JSONResponse) VisitBacktestStrategyDraftResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type BacktestStrategyDraft400JSONResponse struct{ BadRequestJSONResponse }
-
-func (response BacktestStrategyDraft400JSONResponse) VisitBacktestStrategyDraftResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
-	w.WriteHeader(400)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type BacktestStrategyDraft401JSONResponse struct{ UnauthenticatedJSONResponse }
-
-func (response BacktestStrategyDraft401JSONResponse) VisitBacktestStrategyDraftResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
-	w.WriteHeader(401)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type BacktestStrategyDraft403JSONResponse struct {
-	AdministratorRequiredJSONResponse
-}
-
-func (response BacktestStrategyDraft403JSONResponse) VisitBacktestStrategyDraftResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type BacktestStrategyDraft404JSONResponse struct{ SymbolNotFoundJSONResponse }
-
-func (response BacktestStrategyDraft404JSONResponse) VisitBacktestStrategyDraftResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
-	w.WriteHeader(404)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type BacktestStrategyDraft429JSONResponse struct{ BacktestBusyJSONResponse }
-
-func (response BacktestStrategyDraft429JSONResponse) VisitBacktestStrategyDraftResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
-	w.WriteHeader(429)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type BacktestStrategyDraft500JSONResponse struct{ InternalErrorJSONResponse }
-
-func (response BacktestStrategyDraft500JSONResponse) VisitBacktestStrategyDraftResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
-	w.WriteHeader(500)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type BacktestStrategyDraft503JSONResponse struct{ BacktestTooHeavyJSONResponse }
-
-func (response BacktestStrategyDraft503JSONResponse) VisitBacktestStrategyDraftResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(503)
 	_, err := buf.WriteTo(w)
 	return err
@@ -6038,11 +5529,10 @@ type GetStrategyCatalog401JSONResponse struct{ UnauthenticatedJSONResponse }
 func (response GetStrategyCatalog401JSONResponse) VisitGetStrategyCatalogResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
@@ -6069,11 +5559,10 @@ type GetStrategyCatalog500JSONResponse struct{ InternalErrorJSONResponse }
 func (response GetStrategyCatalog500JSONResponse) VisitGetStrategyCatalogResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
@@ -6106,11 +5595,10 @@ type ValidateStrategy400JSONResponse struct{ BadRequestJSONResponse }
 func (response ValidateStrategy400JSONResponse) VisitValidateStrategyResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(400)
 	_, err := buf.WriteTo(w)
 	return err
@@ -6121,11 +5609,10 @@ type ValidateStrategy401JSONResponse struct{ UnauthenticatedJSONResponse }
 func (response ValidateStrategy401JSONResponse) VisitValidateStrategyResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
@@ -6152,11 +5639,10 @@ type ValidateStrategy500JSONResponse struct{ InternalErrorJSONResponse }
 func (response ValidateStrategy500JSONResponse) VisitValidateStrategyResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
@@ -6188,11 +5674,10 @@ type ListUsers401JSONResponse struct{ UnauthenticatedJSONResponse }
 func (response ListUsers401JSONResponse) VisitListUsersResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
@@ -6219,11 +5704,10 @@ type ListUsers500JSONResponse struct{ InternalErrorJSONResponse }
 func (response ListUsers500JSONResponse) VisitListUsersResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
@@ -6250,11 +5734,10 @@ type DeleteUser401JSONResponse struct{ UnauthenticatedJSONResponse }
 func (response DeleteUser401JSONResponse) VisitDeleteUserResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
@@ -6311,11 +5794,10 @@ type DeleteUser500JSONResponse struct{ InternalErrorJSONResponse }
 func (response DeleteUser500JSONResponse) VisitDeleteUserResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
@@ -6343,11 +5825,10 @@ type UpdateUser401JSONResponse struct{ UnauthenticatedJSONResponse }
 func (response UpdateUser401JSONResponse) VisitUpdateUserResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
@@ -6404,11 +5885,10 @@ type UpdateUser500JSONResponse struct{ InternalErrorJSONResponse }
 func (response UpdateUser500JSONResponse) VisitUpdateUserResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
@@ -6435,11 +5915,10 @@ type DeletePriceAlert401JSONResponse struct{ UnauthenticatedJSONResponse }
 func (response DeletePriceAlert401JSONResponse) VisitDeletePriceAlertResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
@@ -6450,11 +5929,10 @@ type DeletePriceAlert403JSONResponse struct{ AccessDeniedJSONResponse }
 func (response DeletePriceAlert403JSONResponse) VisitDeletePriceAlertResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
@@ -6479,11 +5957,10 @@ type DeletePriceAlert500JSONResponse struct{ InternalErrorJSONResponse }
 func (response DeletePriceAlert500JSONResponse) VisitDeletePriceAlertResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
@@ -6517,11 +5994,10 @@ type UpdatePriceAlert400JSONResponse struct{ BadRequestJSONResponse }
 func (response UpdatePriceAlert400JSONResponse) VisitUpdatePriceAlertResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(400)
 	_, err := buf.WriteTo(w)
 	return err
@@ -6532,11 +6008,10 @@ type UpdatePriceAlert401JSONResponse struct{ UnauthenticatedJSONResponse }
 func (response UpdatePriceAlert401JSONResponse) VisitUpdatePriceAlertResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
@@ -6547,11 +6022,10 @@ type UpdatePriceAlert403JSONResponse struct{ AccessDeniedJSONResponse }
 func (response UpdatePriceAlert403JSONResponse) VisitUpdatePriceAlertResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
@@ -6590,11 +6064,10 @@ type UpdatePriceAlert500JSONResponse struct{ InternalErrorJSONResponse }
 func (response UpdatePriceAlert500JSONResponse) VisitUpdatePriceAlertResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
@@ -6602,7 +6075,6 @@ func (response UpdatePriceAlert500JSONResponse) VisitUpdatePriceAlertResponse(w 
 
 type AnalyzeInstrumentRequestObject struct {
 	Symbol Symbol `json:"symbol"`
-	Params AnalyzeInstrumentParams
 	Body   *AnalyzeInstrumentJSONRequestBody
 }
 
@@ -6610,23 +6082,15 @@ type AnalyzeInstrumentResponseObject interface {
 	VisitAnalyzeInstrumentResponse(w http.ResponseWriter) error
 }
 
-type AnalyzeInstrument200ResponseHeaders struct {
-	XRequestID string
-}
-
-type AnalyzeInstrument200JSONResponse struct {
-	Body    InstrumentAnalysisResponse
-	Headers AnalyzeInstrument200ResponseHeaders
-}
+type AnalyzeInstrument200JSONResponse InstrumentAnalysisResponse
 
 func (response AnalyzeInstrument200JSONResponse) VisitAnalyzeInstrumentResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(200)
 	_, err := buf.WriteTo(w)
 	return err
@@ -6637,11 +6101,10 @@ type AnalyzeInstrument400JSONResponse struct{ BadRequestJSONResponse }
 func (response AnalyzeInstrument400JSONResponse) VisitAnalyzeInstrumentResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(400)
 	_, err := buf.WriteTo(w)
 	return err
@@ -6652,11 +6115,10 @@ type AnalyzeInstrument401JSONResponse struct{ UnauthenticatedJSONResponse }
 func (response AnalyzeInstrument401JSONResponse) VisitAnalyzeInstrumentResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
@@ -6667,11 +6129,10 @@ type AnalyzeInstrument403JSONResponse struct{ AccessDeniedJSONResponse }
 func (response AnalyzeInstrument403JSONResponse) VisitAnalyzeInstrumentResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
@@ -6682,11 +6143,10 @@ type AnalyzeInstrument404JSONResponse struct{ SymbolNotFoundJSONResponse }
 func (response AnalyzeInstrument404JSONResponse) VisitAnalyzeInstrumentResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(404)
 	_, err := buf.WriteTo(w)
 	return err
@@ -6697,11 +6157,10 @@ type AnalyzeInstrument409JSONResponse struct{ InsufficientDataJSONResponse }
 func (response AnalyzeInstrument409JSONResponse) VisitAnalyzeInstrumentResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(409)
 	_, err := buf.WriteTo(w)
 	return err
@@ -6714,11 +6173,10 @@ type AnalyzeInstrument422JSONResponse struct {
 func (response AnalyzeInstrument422JSONResponse) VisitAnalyzeInstrumentResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(422)
 	_, err := buf.WriteTo(w)
 	return err
@@ -6729,11 +6187,10 @@ type AnalyzeInstrument500JSONResponse struct{ InternalErrorJSONResponse }
 func (response AnalyzeInstrument500JSONResponse) VisitAnalyzeInstrumentResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
@@ -6746,42 +6203,32 @@ type AnalyzeInstrument503JSONResponse struct {
 func (response AnalyzeInstrument503JSONResponse) VisitAnalyzeInstrumentResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(503)
 	_, err := buf.WriteTo(w)
 	return err
 }
 
 type AnalyzeMarketRequestObject struct {
-	Params AnalyzeMarketParams
-	Body   *AnalyzeMarketJSONRequestBody
+	Body *AnalyzeMarketJSONRequestBody
 }
 
 type AnalyzeMarketResponseObject interface {
 	VisitAnalyzeMarketResponse(w http.ResponseWriter) error
 }
 
-type AnalyzeMarket200ResponseHeaders struct {
-	XRequestID string
-}
-
-type AnalyzeMarket200JSONResponse struct {
-	Body    MarketAnalysisResponse
-	Headers AnalyzeMarket200ResponseHeaders
-}
+type AnalyzeMarket200JSONResponse MarketAnalysisResponse
 
 func (response AnalyzeMarket200JSONResponse) VisitAnalyzeMarketResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(200)
 	_, err := buf.WriteTo(w)
 	return err
@@ -6792,11 +6239,10 @@ type AnalyzeMarket400JSONResponse struct{ BadRequestJSONResponse }
 func (response AnalyzeMarket400JSONResponse) VisitAnalyzeMarketResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(400)
 	_, err := buf.WriteTo(w)
 	return err
@@ -6807,11 +6253,10 @@ type AnalyzeMarket401JSONResponse struct{ UnauthenticatedJSONResponse }
 func (response AnalyzeMarket401JSONResponse) VisitAnalyzeMarketResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
@@ -6822,11 +6267,10 @@ type AnalyzeMarket403JSONResponse struct{ AccessDeniedJSONResponse }
 func (response AnalyzeMarket403JSONResponse) VisitAnalyzeMarketResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
@@ -6839,11 +6283,10 @@ type AnalyzeMarket422JSONResponse struct {
 func (response AnalyzeMarket422JSONResponse) VisitAnalyzeMarketResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(422)
 	_, err := buf.WriteTo(w)
 	return err
@@ -6854,11 +6297,10 @@ type AnalyzeMarket500JSONResponse struct{ InternalErrorJSONResponse }
 func (response AnalyzeMarket500JSONResponse) VisitAnalyzeMarketResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
@@ -6871,18 +6313,16 @@ type AnalyzeMarket503JSONResponse struct {
 func (response AnalyzeMarket503JSONResponse) VisitAnalyzeMarketResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(503)
 	_, err := buf.WriteTo(w)
 	return err
 }
 
 type DeleteSessionRequestObject struct {
-	Params DeleteSessionParams
 }
 
 type DeleteSessionResponseObject interface {
@@ -6902,11 +6342,10 @@ type DeleteSession401JSONResponse struct{ UnauthenticatedJSONResponse }
 func (response DeleteSession401JSONResponse) VisitDeleteSessionResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
@@ -6917,11 +6356,10 @@ type DeleteSession403JSONResponse struct{ SessionRequiredJSONResponse }
 func (response DeleteSession403JSONResponse) VisitDeleteSessionResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
@@ -6932,41 +6370,31 @@ type DeleteSession500JSONResponse struct{ InternalErrorJSONResponse }
 func (response DeleteSession500JSONResponse) VisitDeleteSessionResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
 }
 
 type CreateSessionRequestObject struct {
-	Params CreateSessionParams
 }
 
 type CreateSessionResponseObject interface {
 	VisitCreateSessionResponse(w http.ResponseWriter) error
 }
 
-type CreateSession201ResponseHeaders struct {
-	XRequestID string
-}
-
-type CreateSession201JSONResponse struct {
-	Body    Session
-	Headers CreateSession201ResponseHeaders
-}
+type CreateSession201JSONResponse Session
 
 func (response CreateSession201JSONResponse) VisitCreateSessionResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(201)
 	_, err := buf.WriteTo(w)
 	return err
@@ -6977,11 +6405,10 @@ type CreateSession401JSONResponse struct{ UnauthenticatedJSONResponse }
 func (response CreateSession401JSONResponse) VisitCreateSessionResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
@@ -6992,11 +6419,10 @@ type CreateSession403JSONResponse struct{ AccessDeniedJSONResponse }
 func (response CreateSession403JSONResponse) VisitCreateSessionResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
@@ -7007,11 +6433,10 @@ type CreateSession500JSONResponse struct{ InternalErrorJSONResponse }
 func (response CreateSession500JSONResponse) VisitCreateSessionResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
@@ -7044,11 +6469,10 @@ type ListChartIndicators401JSONResponse struct{ UnauthenticatedJSONResponse }
 func (response ListChartIndicators401JSONResponse) VisitListChartIndicatorsResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
@@ -7059,11 +6483,10 @@ type ListChartIndicators403JSONResponse struct{ AccessDeniedJSONResponse }
 func (response ListChartIndicators403JSONResponse) VisitListChartIndicatorsResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
@@ -7074,11 +6497,10 @@ type ListChartIndicators500JSONResponse struct{ InternalErrorJSONResponse }
 func (response ListChartIndicators500JSONResponse) VisitListChartIndicatorsResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
@@ -7110,11 +6532,10 @@ type ListFavorites401JSONResponse struct{ UnauthenticatedJSONResponse }
 func (response ListFavorites401JSONResponse) VisitListFavoritesResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
@@ -7125,11 +6546,10 @@ type ListFavorites403JSONResponse struct{ AccessDeniedJSONResponse }
 func (response ListFavorites403JSONResponse) VisitListFavoritesResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
@@ -7140,128 +6560,11 @@ type ListFavorites500JSONResponse struct{ InternalErrorJSONResponse }
 func (response ListFavorites500JSONResponse) VisitListFavoritesResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
-	w.WriteHeader(500)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type AnalyzeFavoritesRequestObject struct {
-	Body *AnalyzeFavoritesJSONRequestBody
-}
-
-type AnalyzeFavoritesResponseObject interface {
-	VisitAnalyzeFavoritesResponse(w http.ResponseWriter) error
-}
-
-type AnalyzeFavorites200JSONResponse MarketAnalysisResponse
-
-func (response AnalyzeFavorites200JSONResponse) VisitAnalyzeFavoritesResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type AnalyzeFavorites400JSONResponse struct{ BadRequestJSONResponse }
-
-func (response AnalyzeFavorites400JSONResponse) VisitAnalyzeFavoritesResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
-	w.WriteHeader(400)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type AnalyzeFavorites401JSONResponse struct{ UnauthenticatedJSONResponse }
-
-func (response AnalyzeFavorites401JSONResponse) VisitAnalyzeFavoritesResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
-	w.WriteHeader(401)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type AnalyzeFavorites403JSONResponse struct{ AccessDeniedJSONResponse }
-
-func (response AnalyzeFavorites403JSONResponse) VisitAnalyzeFavoritesResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
-	w.WriteHeader(403)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type AnalyzeFavorites422JSONResponse struct {
-	UnprocessableAnalysisJSONResponse
-}
-
-func (response AnalyzeFavorites422JSONResponse) VisitAnalyzeFavoritesResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
-	w.WriteHeader(422)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type AnalyzeFavorites500JSONResponse struct{ InternalErrorJSONResponse }
-
-func (response AnalyzeFavorites500JSONResponse) VisitAnalyzeFavoritesResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(500)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type AnalyzeFavorites503JSONResponse struct {
-	AnalysisUnavailableJSONResponse
-}
-
-func (response AnalyzeFavorites503JSONResponse) VisitAnalyzeFavoritesResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
-	w.WriteHeader(503)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -7288,11 +6591,10 @@ type RemoveFavorite401JSONResponse struct{ UnauthenticatedJSONResponse }
 func (response RemoveFavorite401JSONResponse) VisitRemoveFavoriteResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
@@ -7303,11 +6605,10 @@ type RemoveFavorite403JSONResponse struct{ AccessDeniedJSONResponse }
 func (response RemoveFavorite403JSONResponse) VisitRemoveFavoriteResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
@@ -7346,11 +6647,10 @@ type RemoveFavorite500JSONResponse struct{ InternalErrorJSONResponse }
 func (response RemoveFavorite500JSONResponse) VisitRemoveFavoriteResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
@@ -7383,11 +6683,10 @@ type AddFavorite401JSONResponse struct{ UnauthenticatedJSONResponse }
 func (response AddFavorite401JSONResponse) VisitAddFavoriteResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
@@ -7398,11 +6697,10 @@ type AddFavorite403JSONResponse struct{ AccessDeniedJSONResponse }
 func (response AddFavorite403JSONResponse) VisitAddFavoriteResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
@@ -7413,11 +6711,10 @@ type AddFavorite404JSONResponse struct{ SymbolNotFoundJSONResponse }
 func (response AddFavorite404JSONResponse) VisitAddFavoriteResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(404)
 	_, err := buf.WriteTo(w)
 	return err
@@ -7428,11 +6725,10 @@ type AddFavorite500JSONResponse struct{ InternalErrorJSONResponse }
 func (response AddFavorite500JSONResponse) VisitAddFavoriteResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
@@ -7465,11 +6761,10 @@ type ListInstruments401JSONResponse struct{ UnauthenticatedJSONResponse }
 func (response ListInstruments401JSONResponse) VisitListInstrumentsResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
@@ -7480,11 +6775,10 @@ type ListInstruments403JSONResponse struct{ AccessDeniedJSONResponse }
 func (response ListInstruments403JSONResponse) VisitListInstrumentsResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
@@ -7495,11 +6789,10 @@ type ListInstruments500JSONResponse struct{ InternalErrorJSONResponse }
 func (response ListInstruments500JSONResponse) VisitListInstrumentsResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
@@ -7532,11 +6825,10 @@ type ListPriceAlerts401JSONResponse struct{ UnauthenticatedJSONResponse }
 func (response ListPriceAlerts401JSONResponse) VisitListPriceAlertsResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
@@ -7547,11 +6839,10 @@ type ListPriceAlerts403JSONResponse struct{ AccessDeniedJSONResponse }
 func (response ListPriceAlerts403JSONResponse) VisitListPriceAlertsResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
@@ -7562,11 +6853,10 @@ type ListPriceAlerts500JSONResponse struct{ InternalErrorJSONResponse }
 func (response ListPriceAlerts500JSONResponse) VisitListPriceAlertsResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
@@ -7600,11 +6890,10 @@ type CreatePriceAlert400JSONResponse struct{ BadRequestJSONResponse }
 func (response CreatePriceAlert400JSONResponse) VisitCreatePriceAlertResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(400)
 	_, err := buf.WriteTo(w)
 	return err
@@ -7615,11 +6904,10 @@ type CreatePriceAlert401JSONResponse struct{ UnauthenticatedJSONResponse }
 func (response CreatePriceAlert401JSONResponse) VisitCreatePriceAlertResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
@@ -7630,11 +6918,10 @@ type CreatePriceAlert403JSONResponse struct{ AccessDeniedJSONResponse }
 func (response CreatePriceAlert403JSONResponse) VisitCreatePriceAlertResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
@@ -7645,11 +6932,10 @@ type CreatePriceAlert404JSONResponse struct{ SymbolNotFoundJSONResponse }
 func (response CreatePriceAlert404JSONResponse) VisitCreatePriceAlertResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(404)
 	_, err := buf.WriteTo(w)
 	return err
@@ -7674,11 +6960,10 @@ type CreatePriceAlert500JSONResponse struct{ InternalErrorJSONResponse }
 func (response CreatePriceAlert500JSONResponse) VisitCreatePriceAlertResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
@@ -7693,23 +6978,15 @@ type ListInstrumentCandlesResponseObject interface {
 	VisitListInstrumentCandlesResponse(w http.ResponseWriter) error
 }
 
-type ListInstrumentCandles200ResponseHeaders struct {
-	XRequestID string
-}
-
-type ListInstrumentCandles200JSONResponse struct {
-	Body    CandlePageResponse
-	Headers ListInstrumentCandles200ResponseHeaders
-}
+type ListInstrumentCandles200JSONResponse CandlePageResponse
 
 func (response ListInstrumentCandles200JSONResponse) VisitListInstrumentCandlesResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(200)
 	_, err := buf.WriteTo(w)
 	return err
@@ -7720,11 +6997,10 @@ type ListInstrumentCandles400JSONResponse struct{ BadRequestJSONResponse }
 func (response ListInstrumentCandles400JSONResponse) VisitListInstrumentCandlesResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(400)
 	_, err := buf.WriteTo(w)
 	return err
@@ -7735,11 +7011,10 @@ type ListInstrumentCandles401JSONResponse struct{ UnauthenticatedJSONResponse }
 func (response ListInstrumentCandles401JSONResponse) VisitListInstrumentCandlesResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
@@ -7750,11 +7025,10 @@ type ListInstrumentCandles403JSONResponse struct{ AccessDeniedJSONResponse }
 func (response ListInstrumentCandles403JSONResponse) VisitListInstrumentCandlesResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
@@ -7765,11 +7039,10 @@ type ListInstrumentCandles404JSONResponse struct{ SymbolNotFoundJSONResponse }
 func (response ListInstrumentCandles404JSONResponse) VisitListInstrumentCandlesResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(404)
 	_, err := buf.WriteTo(w)
 	return err
@@ -7780,11 +7053,10 @@ type ListInstrumentCandles500JSONResponse struct{ InternalErrorJSONResponse }
 func (response ListInstrumentCandles500JSONResponse) VisitListInstrumentCandlesResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
@@ -7792,30 +7064,21 @@ func (response ListInstrumentCandles500JSONResponse) VisitListInstrumentCandlesR
 
 type GetInstrumentGridLimitsRequestObject struct {
 	Symbol Symbol `json:"symbol"`
-	Params GetInstrumentGridLimitsParams
 }
 
 type GetInstrumentGridLimitsResponseObject interface {
 	VisitGetInstrumentGridLimitsResponse(w http.ResponseWriter) error
 }
 
-type GetInstrumentGridLimits200ResponseHeaders struct {
-	XRequestID string
-}
-
-type GetInstrumentGridLimits200JSONResponse struct {
-	Body    GridLimitsResponse
-	Headers GetInstrumentGridLimits200ResponseHeaders
-}
+type GetInstrumentGridLimits200JSONResponse GridLimitsResponse
 
 func (response GetInstrumentGridLimits200JSONResponse) VisitGetInstrumentGridLimitsResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(200)
 	_, err := buf.WriteTo(w)
 	return err
@@ -7826,11 +7089,10 @@ type GetInstrumentGridLimits400JSONResponse struct{ BadRequestJSONResponse }
 func (response GetInstrumentGridLimits400JSONResponse) VisitGetInstrumentGridLimitsResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(400)
 	_, err := buf.WriteTo(w)
 	return err
@@ -7841,11 +7103,10 @@ type GetInstrumentGridLimits401JSONResponse struct{ UnauthenticatedJSONResponse 
 func (response GetInstrumentGridLimits401JSONResponse) VisitGetInstrumentGridLimitsResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
@@ -7856,11 +7117,10 @@ type GetInstrumentGridLimits403JSONResponse struct{ AccessDeniedJSONResponse }
 func (response GetInstrumentGridLimits403JSONResponse) VisitGetInstrumentGridLimitsResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
@@ -7871,11 +7131,10 @@ type GetInstrumentGridLimits404JSONResponse struct{ SymbolNotFoundJSONResponse }
 func (response GetInstrumentGridLimits404JSONResponse) VisitGetInstrumentGridLimitsResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(404)
 	_, err := buf.WriteTo(w)
 	return err
@@ -7886,11 +7145,10 @@ type GetInstrumentGridLimits500JSONResponse struct{ InternalErrorJSONResponse }
 func (response GetInstrumentGridLimits500JSONResponse) VisitGetInstrumentGridLimitsResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
@@ -7903,11 +7161,10 @@ type GetInstrumentGridLimits503JSONResponse struct {
 func (response GetInstrumentGridLimits503JSONResponse) VisitGetInstrumentGridLimitsResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(503)
 	_, err := buf.WriteTo(w)
 	return err
@@ -7939,11 +7196,10 @@ type GetCurrentUser401JSONResponse struct{ UnauthenticatedJSONResponse }
 func (response GetCurrentUser401JSONResponse) VisitGetCurrentUserResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
@@ -7954,11 +7210,10 @@ type GetCurrentUser403JSONResponse struct{ AccessDeniedJSONResponse }
 func (response GetCurrentUser403JSONResponse) VisitGetCurrentUserResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
@@ -7969,93 +7224,66 @@ type GetCurrentUser500JSONResponse struct{ InternalErrorJSONResponse }
 func (response GetCurrentUser500JSONResponse) VisitGetCurrentUserResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
 }
 
 type GetLivenessRequestObject struct {
-	Params GetLivenessParams
 }
 
 type GetLivenessResponseObject interface {
 	VisitGetLivenessResponse(w http.ResponseWriter) error
 }
 
-type GetLiveness200ResponseHeaders struct {
-	XRequestID string
-}
-
-type GetLiveness200JSONResponse struct {
-	Body    LivenessResponse
-	Headers GetLiveness200ResponseHeaders
-}
+type GetLiveness200JSONResponse LivenessResponse
 
 func (response GetLiveness200JSONResponse) VisitGetLivenessResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(200)
 	_, err := buf.WriteTo(w)
 	return err
 }
 
 type GetReadinessRequestObject struct {
-	Params GetReadinessParams
 }
 
 type GetReadinessResponseObject interface {
 	VisitGetReadinessResponse(w http.ResponseWriter) error
 }
 
-type GetReadiness200ResponseHeaders struct {
-	XRequestID string
-}
-
-type GetReadiness200JSONResponse struct {
-	Body    ReadinessResponse
-	Headers GetReadiness200ResponseHeaders
-}
+type GetReadiness200JSONResponse ReadinessResponse
 
 func (response GetReadiness200JSONResponse) VisitGetReadinessResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(200)
 	_, err := buf.WriteTo(w)
 	return err
 }
 
-type GetReadiness503ResponseHeaders struct {
-	XRequestID string
-}
-
-type GetReadiness503JSONResponse struct {
-	Body    ReadinessResponse
-	Headers GetReadiness503ResponseHeaders
-}
+type GetReadiness503JSONResponse ReadinessResponse
 
 func (response GetReadiness503JSONResponse) VisitGetReadinessResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(503)
 	_, err := buf.WriteTo(w)
 	return err
@@ -8105,18 +7333,18 @@ type StrictServerInterface interface {
 	// DeleteStrategy Remove a strategy
 	// (DELETE /api/v1/admin/strategies/{strategy_id})
 	DeleteStrategy(ctx context.Context, request DeleteStrategyRequestObject) (DeleteStrategyResponseObject, error)
+	// GetStrategy Show a strategy
+	// (GET /api/v1/admin/strategies/{strategy_id})
+	GetStrategy(ctx context.Context, request GetStrategyRequestObject) (GetStrategyResponseObject, error)
 	// SetStrategyEnabled Turn a strategy on or off
 	// (PATCH /api/v1/admin/strategies/{strategy_id})
 	SetStrategyEnabled(ctx context.Context, request SetStrategyEnabledRequestObject) (SetStrategyEnabledResponseObject, error)
 	// UpdateStrategy Change a strategy
 	// (PUT /api/v1/admin/strategies/{strategy_id})
 	UpdateStrategy(ctx context.Context, request UpdateStrategyRequestObject) (UpdateStrategyResponseObject, error)
-	// BacktestStrategy Backtest a saved strategy on one coin
-	// (GET /api/v1/admin/strategies/{strategy_id}/backtest)
-	BacktestStrategy(ctx context.Context, request BacktestStrategyRequestObject) (BacktestStrategyResponseObject, error)
-	// BacktestStrategyDraft Backtest an unsaved strategy on one coin
+	// BacktestStrategy Backtest a strategy on one coin
 	// (POST /api/v1/admin/strategy-backtests)
-	BacktestStrategyDraft(ctx context.Context, request BacktestStrategyDraftRequestObject) (BacktestStrategyDraftResponseObject, error)
+	BacktestStrategy(ctx context.Context, request BacktestStrategyRequestObject) (BacktestStrategyResponseObject, error)
 	// GetStrategyCatalog List what strategy expressions read
 	// (GET /api/v1/admin/strategy-catalog)
 	GetStrategyCatalog(ctx context.Context, request GetStrategyCatalogRequestObject) (GetStrategyCatalogResponseObject, error)
@@ -8141,7 +7369,7 @@ type StrictServerInterface interface {
 	// AnalyzeInstrument Analyze one active instrument
 	// (POST /api/v1/analysis/instruments/{symbol})
 	AnalyzeInstrument(ctx context.Context, request AnalyzeInstrumentRequestObject) (AnalyzeInstrumentResponseObject, error)
-	// AnalyzeMarket Analyze active instruments in the market
+	// AnalyzeMarket Analyze the instruments of a universe
 	// (POST /api/v1/analysis/market)
 	AnalyzeMarket(ctx context.Context, request AnalyzeMarketRequestObject) (AnalyzeMarketResponseObject, error)
 	// DeleteSession Revoke the current session
@@ -8156,9 +7384,6 @@ type StrictServerInterface interface {
 
 	// (GET /api/v1/favorites)
 	ListFavorites(ctx context.Context, request ListFavoritesRequestObject) (ListFavoritesResponseObject, error)
-	// AnalyzeFavorites Analyze the current user's active favorite instruments
-	// (POST /api/v1/favorites/analysis)
-	AnalyzeFavorites(ctx context.Context, request AnalyzeFavoritesRequestObject) (AnalyzeFavoritesResponseObject, error)
 
 	// (DELETE /api/v1/favorites/{symbol})
 	RemoveFavorite(ctx context.Context, request RemoveFavoriteRequestObject) (RemoveFavoriteResponseObject, error)
@@ -8616,6 +7841,32 @@ func (sh *strictHandler) DeleteStrategy(w http.ResponseWriter, r *http.Request, 
 	}
 }
 
+// GetStrategy operation middleware
+func (sh *strictHandler) GetStrategy(w http.ResponseWriter, r *http.Request, strategyId StrategyID) {
+	var request GetStrategyRequestObject
+
+	request.StrategyId = strategyId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetStrategy(ctx, request.(GetStrategyRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetStrategy")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetStrategyResponseObject); ok {
+		if err := validResponse.VisitGetStrategyResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // SetStrategyEnabled operation middleware
 func (sh *strictHandler) SetStrategyEnabled(w http.ResponseWriter, r *http.Request, strategyId StrategyID) {
 	var request SetStrategyEnabledRequestObject
@@ -8683,11 +7934,15 @@ func (sh *strictHandler) UpdateStrategy(w http.ResponseWriter, r *http.Request, 
 }
 
 // BacktestStrategy operation middleware
-func (sh *strictHandler) BacktestStrategy(w http.ResponseWriter, r *http.Request, strategyId StrategyID, params BacktestStrategyParams) {
+func (sh *strictHandler) BacktestStrategy(w http.ResponseWriter, r *http.Request) {
 	var request BacktestStrategyRequestObject
 
-	request.StrategyId = strategyId
-	request.Params = params
+	var body BacktestStrategyJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
 		return sh.ssi.BacktestStrategy(ctx, request.(BacktestStrategyRequestObject))
@@ -8702,37 +7957,6 @@ func (sh *strictHandler) BacktestStrategy(w http.ResponseWriter, r *http.Request
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(BacktestStrategyResponseObject); ok {
 		if err := validResponse.VisitBacktestStrategyResponse(w); err != nil {
-			sh.options.ResponseErrorHandlerFunc(w, r, err)
-		}
-	} else if response != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// BacktestStrategyDraft operation middleware
-func (sh *strictHandler) BacktestStrategyDraft(w http.ResponseWriter, r *http.Request) {
-	var request BacktestStrategyDraftRequestObject
-
-	var body BacktestStrategyDraftJSONRequestBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
-		return
-	}
-	request.Body = &body
-
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.BacktestStrategyDraft(ctx, request.(BacktestStrategyDraftRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "BacktestStrategyDraft")
-	}
-
-	response, err := handler(r.Context(), w, r, request)
-
-	if err != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(BacktestStrategyDraftResponseObject); ok {
-		if err := validResponse.VisitBacktestStrategyDraftResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -8938,11 +8162,10 @@ func (sh *strictHandler) UpdatePriceAlert(w http.ResponseWriter, r *http.Request
 }
 
 // AnalyzeInstrument operation middleware
-func (sh *strictHandler) AnalyzeInstrument(w http.ResponseWriter, r *http.Request, symbol Symbol, params AnalyzeInstrumentParams) {
+func (sh *strictHandler) AnalyzeInstrument(w http.ResponseWriter, r *http.Request, symbol Symbol) {
 	var request AnalyzeInstrumentRequestObject
 
 	request.Symbol = symbol
-	request.Params = params
 
 	var body AnalyzeInstrumentJSONRequestBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -8972,10 +8195,8 @@ func (sh *strictHandler) AnalyzeInstrument(w http.ResponseWriter, r *http.Reques
 }
 
 // AnalyzeMarket operation middleware
-func (sh *strictHandler) AnalyzeMarket(w http.ResponseWriter, r *http.Request, params AnalyzeMarketParams) {
+func (sh *strictHandler) AnalyzeMarket(w http.ResponseWriter, r *http.Request) {
 	var request AnalyzeMarketRequestObject
-
-	request.Params = params
 
 	var body AnalyzeMarketJSONRequestBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -9005,10 +8226,8 @@ func (sh *strictHandler) AnalyzeMarket(w http.ResponseWriter, r *http.Request, p
 }
 
 // DeleteSession operation middleware
-func (sh *strictHandler) DeleteSession(w http.ResponseWriter, r *http.Request, params DeleteSessionParams) {
+func (sh *strictHandler) DeleteSession(w http.ResponseWriter, r *http.Request) {
 	var request DeleteSessionRequestObject
-
-	request.Params = params
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
 		return sh.ssi.DeleteSession(ctx, request.(DeleteSessionRequestObject))
@@ -9031,10 +8250,8 @@ func (sh *strictHandler) DeleteSession(w http.ResponseWriter, r *http.Request, p
 }
 
 // CreateSession operation middleware
-func (sh *strictHandler) CreateSession(w http.ResponseWriter, r *http.Request, params CreateSessionParams) {
+func (sh *strictHandler) CreateSession(w http.ResponseWriter, r *http.Request) {
 	var request CreateSessionRequestObject
-
-	request.Params = params
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
 		return sh.ssi.CreateSession(ctx, request.(CreateSessionRequestObject))
@@ -9099,37 +8316,6 @@ func (sh *strictHandler) ListFavorites(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ListFavoritesResponseObject); ok {
 		if err := validResponse.VisitListFavoritesResponse(w); err != nil {
-			sh.options.ResponseErrorHandlerFunc(w, r, err)
-		}
-	} else if response != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// AnalyzeFavorites operation middleware
-func (sh *strictHandler) AnalyzeFavorites(w http.ResponseWriter, r *http.Request) {
-	var request AnalyzeFavoritesRequestObject
-
-	var body AnalyzeFavoritesJSONRequestBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
-		return
-	}
-	request.Body = &body
-
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.AnalyzeFavorites(ctx, request.(AnalyzeFavoritesRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "AnalyzeFavorites")
-	}
-
-	response, err := handler(r.Context(), w, r, request)
-
-	if err != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(AnalyzeFavoritesResponseObject); ok {
-		if err := validResponse.VisitAnalyzeFavoritesResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -9303,11 +8489,10 @@ func (sh *strictHandler) ListInstrumentCandles(w http.ResponseWriter, r *http.Re
 }
 
 // GetInstrumentGridLimits operation middleware
-func (sh *strictHandler) GetInstrumentGridLimits(w http.ResponseWriter, r *http.Request, symbol Symbol, params GetInstrumentGridLimitsParams) {
+func (sh *strictHandler) GetInstrumentGridLimits(w http.ResponseWriter, r *http.Request, symbol Symbol) {
 	var request GetInstrumentGridLimitsRequestObject
 
 	request.Symbol = symbol
-	request.Params = params
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
 		return sh.ssi.GetInstrumentGridLimits(ctx, request.(GetInstrumentGridLimitsRequestObject))
@@ -9354,10 +8539,8 @@ func (sh *strictHandler) GetCurrentUser(w http.ResponseWriter, r *http.Request) 
 }
 
 // GetLiveness operation middleware
-func (sh *strictHandler) GetLiveness(w http.ResponseWriter, r *http.Request, params GetLivenessParams) {
+func (sh *strictHandler) GetLiveness(w http.ResponseWriter, r *http.Request) {
 	var request GetLivenessRequestObject
-
-	request.Params = params
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
 		return sh.ssi.GetLiveness(ctx, request.(GetLivenessRequestObject))
@@ -9380,10 +8563,8 @@ func (sh *strictHandler) GetLiveness(w http.ResponseWriter, r *http.Request, par
 }
 
 // GetReadiness operation middleware
-func (sh *strictHandler) GetReadiness(w http.ResponseWriter, r *http.Request, params GetReadinessParams) {
+func (sh *strictHandler) GetReadiness(w http.ResponseWriter, r *http.Request) {
 	var request GetReadinessRequestObject
-
-	request.Params = params
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
 		return sh.ssi.GetReadiness(ctx, request.(GetReadinessRequestObject))
@@ -9410,338 +8591,338 @@ func (sh *strictHandler) GetReadiness(w http.ResponseWriter, r *http.Request, pa
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
-	"/2cAAAD//w==",
+	"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",
+	"MT+Nfq6t6NGPDX09brd5dD99/PT/BwAA//8=",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

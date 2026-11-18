@@ -20,7 +20,7 @@ func TestCandleHistoryReturnsChronologicalKeysetPage(t *testing.T) {
 		{OpenTime: oldest, CloseTime: oldest.Add(time.Hour - time.Millisecond), Open: 1, High: 3, Low: .5, Close: 2},
 		{OpenTime: oldest.Add(time.Hour), CloseTime: oldest.Add(2*time.Hour - time.Millisecond), Open: 2, High: 4, Low: 1, Close: 3},
 	}}}
-	handler := httpapi.NewWithAuthentication(logging.New(io.Discard, "error", logging.Options{}), httpapi.Dependencies{Readiness: readinessStub{}, Analysis: unavailableAnalysis{}, History: history}, httpapi.Options{}, passThrough)
+	handler := newTestHandlerWithAuthentication(logging.New(io.Discard, "error", logging.Options{}), httpapi.Dependencies{Readiness: readinessStub{}, Analysis: unavailableAnalysis{}, History: history}, httpapi.Options{}, passThrough)
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/instruments/btcusdt/candles?interval=1h&limit=2", nil)
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
@@ -47,16 +47,16 @@ func TestCandleHistoryReturnsChronologicalKeysetPage(t *testing.T) {
 	}
 }
 
-func TestCandleHistoryValidationPreservesCanonicalErrors(t *testing.T) {
+func TestCandleHistoryValidationNamesTheParameter(t *testing.T) {
 	history := &candleHistoryStub{}
-	handler := httpapi.NewWithAuthentication(logging.New(io.Discard, "error", logging.Options{}), httpapi.Dependencies{Readiness: readinessStub{}, Analysis: unavailableAnalysis{}, History: history}, httpapi.Options{}, passThrough)
+	handler := newTestHandlerWithAuthentication(logging.New(io.Discard, "error", logging.Options{}), httpapi.Dependencies{Readiness: readinessStub{}, Analysis: unavailableAnalysis{}, History: history}, httpapi.Options{}, passThrough)
 	for _, test := range []struct {
 		target  string
 		message string
 	}{
-		{target: "/api/v1/instruments/BTCUSDT/candles?interval=4h", message: "Unsupported candle interval"},
-		{target: "/api/v1/instruments/BTCUSDT/candles?interval=1d&limit=501", message: "Invalid candle page limit"},
-		{target: "/api/v1/instruments/BTCUSDT/candles?interval=1M&before=yesterday", message: "Invalid candle cursor"},
+		{target: "/api/v1/instruments/BTCUSDT/candles?interval=4h", message: `Invalid query parameter "interval": value must be one of '1h', '1d', '1w', '1M'`},
+		{target: "/api/v1/instruments/BTCUSDT/candles?interval=1d&limit=501", message: `Invalid query parameter "limit": maximum: got 501, want 500`},
+		{target: "/api/v1/instruments/BTCUSDT/candles?interval=1M&before=yesterday", message: `Invalid parameter "before": invalid format`},
 		{target: "/api/v1/instruments/%20/candles?interval=1h", message: "Symbol is required"},
 	} {
 		t.Run(test.message, func(t *testing.T) {

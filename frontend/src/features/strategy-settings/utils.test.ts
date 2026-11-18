@@ -5,7 +5,7 @@ import {
 	Direction,
 	type StrategyCatalog,
 	StrategyCoinSource,
-	type StrategyIndicatorParameter,
+	type IndicatorParameter,
 } from "@/api/generated/models";
 import {
 	fieldVariable,
@@ -37,11 +37,12 @@ import {
 } from "@/features/strategy-settings/utils";
 
 const source = (
-	choices: StrategyIndicatorParameter["choices"],
+	choices: IndicatorParameter["choices"],
 	value = 1,
-): StrategyIndicatorParameter => ({
+): IndicatorParameter => ({
 	choices,
 	default: value,
+	description: "",
 	key: "source",
 	kind: "source",
 	title: "Source",
@@ -52,8 +53,9 @@ const fields = [
 	{ name: "volume", title: "Volume", value: 2 },
 ];
 
-const period = (value: number): StrategyIndicatorParameter => ({
+const period = (value: number): IndicatorParameter => ({
 	default: value,
+	description: "",
 	key: "period",
 	kind: "integer",
 	maximum: 100000,
@@ -66,6 +68,8 @@ const strategyCatalog: StrategyCatalog = {
 	candle_fields: ["close", "volume"],
 	indicator_types: [
 		{
+			group: "",
+			overlay: false,
 			outputs: [
 				{ name: "upperband", sparse: false },
 				{ name: "lowerband", sparse: false },
@@ -74,6 +78,7 @@ const strategyCatalog: StrategyCatalog = {
 				period(5),
 				{
 					default: 2,
+					description: "",
 					key: "deviations_up",
 					kind: "real",
 					maximum: 3e37,
@@ -86,6 +91,7 @@ const strategyCatalog: StrategyCatalog = {
 						{ name: "ema", title: "EMA", value: 1 },
 					],
 					default: 0,
+					description: "",
 					key: "ma_type",
 					kind: "choice",
 					title: "MA Type",
@@ -96,6 +102,8 @@ const strategyCatalog: StrategyCatalog = {
 			type: "bbands",
 		},
 		{
+			group: "",
+			overlay: false,
 			outputs: [
 				{ name: "high", sparse: true },
 				{ name: "low", sparse: true },
@@ -109,6 +117,8 @@ const strategyCatalog: StrategyCatalog = {
 			type: "pivot",
 		},
 		{
+			group: "",
+			overlay: false,
 			outputs: [
 				{ name: "bull", sparse: true },
 				{ name: "rsi", sparse: false },
@@ -122,6 +132,7 @@ const strategyCatalog: StrategyCatalog = {
 						{ name: "price", title: "Price", value: 1 },
 					],
 					default: 0,
+					description: "",
 					key: "pivots",
 					kind: "choice",
 					title: "Pivots in",
@@ -131,6 +142,8 @@ const strategyCatalog: StrategyCatalog = {
 			type: "divergence",
 		},
 		{
+			group: "",
+			overlay: false,
 			outputs: [{ name: "rsi", sparse: false }],
 			parameters: [period(14), source(fields)],
 			title: "Relative Strength Index",
@@ -578,34 +591,36 @@ describe("strategyInput", () => {
 
 	it("sends the selects' choices as numbers", () => {
 		expect(strategyInput(named, true)).toMatchObject({
-			target_ratio: 3,
-			window: 12,
+			rules: { target_ratio: 3, window: 12 },
 		});
 	});
 
 	it("sends no target ratio or window for a simple signal", () => {
 		expect(
 			strategyInput({ ...named, direction: Direction.simple }, true),
-		).toMatchObject({ target_ratio: null, window: null });
+		).toMatchObject({ rules: { target_ratio: null, window: null } });
 	});
 
 	it("sends the coins, or none for a signal of the favorites or all coins", () => {
 		expect(strategyInput(named, true)).toMatchObject({
-			coin_source: StrategyCoinSource.CoinSourceSelected,
-			coins: ["BTCUSDT", "SOLUSDT"],
+			coins: {
+				source: StrategyCoinSource.CoinSourceSelected,
+				symbols: ["BTCUSDT", "SOLUSDT"],
+			},
 		});
 		for (const coinSource of [
 			StrategyCoinSource.CoinSourceFavorites,
 			StrategyCoinSource.CoinSourceAll,
 		]) {
 			expect(strategyInput({ ...named, coinSource }, true)).toMatchObject({
-				coin_source: coinSource,
-				coins: [],
+				coins: { source: coinSource, symbols: [] },
 			});
 			// Only a signal evaluates the favorites or all coins.
 			expect(strategyInput({ ...named, coinSource }, false)).toMatchObject({
-				coin_source: StrategyCoinSource.CoinSourceSelected,
-				coins: ["BTCUSDT", "SOLUSDT"],
+				coins: {
+					source: StrategyCoinSource.CoinSourceSelected,
+					symbols: ["BTCUSDT", "SOLUSDT"],
+				},
 			});
 		}
 	});

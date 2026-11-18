@@ -2,6 +2,7 @@ import type { ErrorType } from "@/api/fetch";
 import type {
 	CandleInterval,
 	ErrorResponse,
+	IndicatorParameter,
 	IndicatorType,
 	ScannerIndicator,
 	ScannerIndicatorInput,
@@ -18,13 +19,19 @@ import type {
 } from "@/features/scanner-settings/types";
 import { describeApiError } from "@/utils/api-error";
 
+// Whether a parameter is chosen among its choices: a choice, or a source,
+// which scanner indicators read only as one of its candle fields.
+export function choosesAmongChoices(parameter: IndicatorParameter): boolean {
+	return parameter.kind === "choice" || parameter.kind === "source";
+}
+
 // The parameter inputs' initial values; a choice select holds its value as a
 // string.
 export function defaultParameterValues(type: IndicatorType): ParameterValues {
 	return Object.fromEntries(
 		type.parameters.map((parameter) => [
 			parameter.key,
-			parameter.kind === "choice"
+			choosesAmongChoices(parameter)
 				? String(parameter.default)
 				: parameter.default,
 		]),

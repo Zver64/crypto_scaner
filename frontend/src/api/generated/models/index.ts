@@ -9,6 +9,10 @@
  * `POST /api/v1/auth/session` and send `Authorization: Bearer <token>` to every
  * other operation. A request rejected with `401` needs a new session.
  *
+ * Every response carries an `X-Request-ID` header: the caller's own
+ * `X-Request-ID` when it is a safe value, otherwise one the server assigns.
+ * Error bodies repeat it as `request_id`.
+ *
  * The client offers the WebSocket subprotocol `crypto-scanner.live.v1` followed by
  * its session token as a second subprotocol (`Sec-WebSocket-Protocol`); the token is
  * never placed in the URL. The handshake fails with `401` for a missing or invalid
@@ -37,6 +41,7 @@ export * from './apiTokenNotFoundResponse.ts';
 export * from './backtestBaselines.ts';
 export * from './backtestBusyResponse.ts';
 export * from './backtestChart.ts';
+export * from './backtestedStrategy.ts';
 export * from './backtestEquityPoint.ts';
 export * from './backtestFill.ts';
 export * from './backtestIndicatorColumn.ts';
@@ -46,7 +51,6 @@ export * from './backtestSignalOccurrence.ts';
 export * from './backtestSignalOccurrenceIndicatorValues.ts';
 export * from './backtestSignalOutcome.ts';
 export * from './backtestSignalStats.ts';
-export * from './backtestStrategyParams.ts';
 export * from './backtestSummary.ts';
 export * from './backtestTooHeavyResponse.ts';
 export * from './backtestTrade.ts';
@@ -88,6 +92,8 @@ export * from './criterionRequest.ts';
 export * from './criterionRequestParameters.ts';
 export * from './currentUser.ts';
 export * from './direction.ts';
+export * from './draftBacktestedStrategy.ts';
+export * from './draftBacktestedStrategyKind.ts';
 export * from './errorResponse.ts';
 export * from './evaluation.ts';
 export * from './evaluationMetrics.ts';
@@ -100,6 +106,7 @@ export * from './historyLoadRunningResponse.ts';
 export * from './indicatorChoice.ts';
 export * from './indicatorConfig.ts';
 export * from './indicatorConfigParameters.ts';
+export * from './indicatorOutput.ts';
 export * from './indicatorParameter.ts';
 export * from './indicatorParameterKind.ts';
 export * from './indicatorType.ts';
@@ -123,6 +130,7 @@ export * from './liveCandleServerMessageCode.ts';
 export * from './liveCandleServerMessageFreshness.ts';
 export * from './liveCandleServerMessageType.ts';
 export * from './livenessResponse.ts';
+export * from './market.ts';
 export * from './marketAnalysisItem.ts';
 export * from './marketAnalysisRequest.ts';
 export * from './marketAnalysisResponse.ts';
@@ -140,7 +148,8 @@ export * from './readinessResponse.ts';
 export * from './readinessResponseChecks.ts';
 export * from './readinessResponseStatus.ts';
 export * from './removeFavoriteParams.ts';
-export * from './requestIDParameter.ts';
+export * from './savedBacktestedStrategy.ts';
+export * from './savedBacktestedStrategyKind.ts';
 export * from './scannerIndicator.ts';
 export * from './scannerIndicatorConflictResponse.ts';
 export * from './scannerIndicatorInput.ts';
@@ -166,23 +175,20 @@ export * from './strategyCoins.ts';
 export * from './strategyCoinSource.ts';
 export * from './strategyConflictResponse.ts';
 export * from './strategyEnabled.ts';
-export * from './strategyExitExpression.ts';
 export * from './strategyID.ts';
 export * from './strategyIndicatorCall.ts';
-export * from './strategyIndicatorChoice.ts';
-export * from './strategyIndicatorOutput.ts';
-export * from './strategyIndicatorParameter.ts';
-export * from './strategyIndicatorParameterKind.ts';
-export * from './strategyIndicatorType.ts';
 export * from './strategyInput.ts';
+export * from './strategyInvalidError.ts';
+export * from './strategyInvalidErrorCode.ts';
+export * from './strategyInvalidResponse.ts';
 export * from './strategyList.ts';
 export * from './strategyMarketCapBound.ts';
 export * from './strategyMessage.ts';
+export * from './strategyName.ts';
 export * from './strategyNotFoundResponse.ts';
 export * from './strategyPositionVariable.ts';
-export * from './strategySignal.ts';
-export * from './strategyStopLossExpression.ts';
-export * from './strategyTakeProfitExpression.ts';
+export * from './strategyProblems.ts';
+export * from './strategyRules.ts';
 export * from './strategyUpdate.ts';
 export * from './strategyValidation.ts';
 export * from './strategyValidationInput.ts';

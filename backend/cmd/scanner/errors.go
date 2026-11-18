@@ -34,14 +34,16 @@ func usageError(format string, args ...any) error {
 }
 
 // Error returns the text form: an API error's code and message, a local
-// error's message, and every listed problem on a line of its own.
+// error's message, and every listed problem on a line of its own instead of
+// joined at the end of the message.
 func (e *cliError) Error() string {
 	text := e.message
 	if e.api {
 		text = e.code + ": " + text
 	}
-	if problems, ok := e.details.([]string); ok {
-		text += "\n  " + strings.Join(problems, "\n  ")
+	if problems, ok := e.details.(apiclient.StrategyProblems); ok {
+		text = strings.TrimSuffix(text, strings.Join(problems.Problems, "; "))
+		text = strings.TrimSuffix(strings.TrimSpace(text), ":") + ":\n  " + strings.Join(problems.Problems, "\n  ")
 	}
 	return text
 }
@@ -74,6 +76,22 @@ func (c *cli) describe(err error) *cliError {
 		return &cliError{code: "usage", message: err.Error()}
 	}
 	return &cliError{code: "unexpected_response", message: fmt.Sprintf("unexpected API response from %s: %v; check the profile's server URL", c.server, err)}
+}
+
+// strategyInvalid reads the 400 of a strategy operation as an API error
+// whose details list the problems of the strategy, nil without it.
+func strategyInvalid(response *apiclient.StrategyInvalid) *apiclient.ErrorResponse {
+	if response == nil {
+		return nil
+	}
+	converted := &apiclient.ErrorResponse{
+		Error:     apiclient.APIError{Code: apiclient.APIErrorCode(response.Error.Code), Message: response.Error.Message},
+		RequestId: response.RequestId,
+	}
+	if response.Error.Details != nil {
+		converted.Error.Details = *response.Error.Details
+	}
+	return converted
 }
 
 // apiResponse is a generated response; every operation declares these errors.

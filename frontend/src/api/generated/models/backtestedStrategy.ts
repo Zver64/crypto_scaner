@@ -9,6 +9,10 @@
  * `POST /api/v1/auth/session` and send `Authorization: Bearer <token>` to every
  * other operation. A request rejected with `401` needs a new session.
  *
+ * Every response carries an `X-Request-ID` header: the caller's own
+ * `X-Request-ID` when it is a safe value, otherwise one the server assigns.
+ * Error bodies repeat it as `request_id`.
+ *
  * The client offers the WebSocket subprotocol `crypto-scanner.live.v1` followed by
  * its session token as a second subprotocol (`Sec-WebSocket-Protocol`); the token is
  * never placed in the URL. The handshake fails with `401` for a missing or invalid
@@ -21,11 +25,10 @@
  *
  * OpenAPI spec version: 1.0.0
  */
+import type { DraftBacktestedStrategy } from './draftBacktestedStrategy.ts';
+import type { SavedBacktestedStrategy } from './savedBacktestedStrategy.ts';
 
 /**
- * Stop loss price, a CEL price expression like the take profit, such as
- * `close("1h") - 2 * atr("1h")`. A signal whose stop loss is not between 0
- * and its close buys nothing. Empty without a stop loss.
- * @maxLength 2000
+ * A saved strategy, by its id, or the rules of an unsaved one.
  */
-export type StrategyStopLossExpression = string;
+export type BacktestedStrategy = SavedBacktestedStrategy | DraftBacktestedStrategy;

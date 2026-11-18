@@ -19,7 +19,7 @@ func TestWrapCellsKeepsJoinedEmojiTogether(t *testing.T) {
 		t.Fatalf("wrap = %q", got)
 	}
 	var output bytes.Buffer
-	renderStrategiesWidth(&output, strategiesKind, []apiclient.Strategy{{Id: uuid.UUID{15: 1}, Name: "A👨‍👩‍👧‍👦B❤️", Expression: "true", Valid: true}}, 80)
+	renderStrategiesWidth(&output, strategiesKind, []apiclient.Strategy{{Id: uuid.UUID{15: 1}, Name: "A👨‍👩‍👧‍👦B❤️", Rules: apiclient.StrategyRules{Expression: "true"}, Valid: true}}, 80)
 	lines := strings.Split(strings.TrimSpace(output.String()), "\n")
 	width := uniseg.StringWidth(lines[0])
 	for _, line := range lines {
@@ -32,8 +32,8 @@ func TestWrapCellsKeepsJoinedEmojiTogether(t *testing.T) {
 func TestStrategiesFitTerminalWidth(t *testing.T) {
 	strategies := []apiclient.Strategy{{
 		Id: uuid.Max, Name: "A策略 Длинное название 策略 👨‍👩‍👧‍👦 ❤️", Enabled: true,
-		Expression:     "h_close > 123456789012345678901234567890 && d_rsi < 30",
-		ExitExpression: "pnl > 5", Message: strings.Repeat("alert ", 20),
+		Rules:   apiclient.StrategyRules{Expression: "h_close > 123456789012345678901234567890 && d_rsi < 30", ExitExpression: "pnl > 5"},
+		Message: strings.Repeat("alert ", 20),
 	}}
 	for _, width := range []int{20, 29, 35, 36, 40, 80, 120} {
 		var output bytes.Buffer

@@ -36,7 +36,8 @@ export function StrategyRow({
 	selected = false,
 	strategy,
 }: StrategyRowProps) {
-	const marketCap = marketCapRangeLabel(strategy);
+	const { rules } = strategy;
+	const marketCap = marketCapRangeLabel(strategy.coins);
 	return (
 		<Paper
 			p="xs"
@@ -53,8 +54,8 @@ export function StrategyRow({
 			<Stack gap={6}>
 				<Group justify="space-between" wrap="nowrap">
 					<Group gap="xs" miw={0} wrap="nowrap">
-						{strategy.signal ? (
-							<SignalDirectionIcon direction={strategy.direction} />
+						{rules.signal ? (
+							<SignalDirectionIcon direction={rules.direction} />
 						) : null}
 						<Text fw={700} truncate>
 							{strategy.name}
@@ -78,11 +79,11 @@ export function StrategyRow({
 						{strategy.problem}
 					</Text>
 				)}
-				<Code block>{strategy.expression}</Code>
+				<Code block>{rules.expression}</Code>
 				{[
-					{ expression: strategy.exit_expression, title: "Exit" },
-					{ expression: strategy.take_profit_expression, title: "Take profit" },
-					{ expression: strategy.stop_loss_expression, title: "Stop loss" },
+					{ expression: rules.exit_expression, title: "Exit" },
+					{ expression: rules.take_profit_expression, title: "Take profit" },
+					{ expression: rules.stop_loss_expression, title: "Stop loss" },
 				].map(({ expression, title }) =>
 					expression === "" ? null : (
 						<Stack gap={2} key={title}>
@@ -93,7 +94,7 @@ export function StrategyRow({
 						</Stack>
 					),
 				)}
-				{strategy.signal ? (
+				{rules.signal ? (
 					marketCap === undefined ? null : (
 						<Text c="dimmed" size="xs">
 							Market cap {marketCap}
@@ -101,7 +102,7 @@ export function StrategyRow({
 					)
 				) : (
 					<Text c="dimmed" size="xs">
-						{strategyBuysLabel(strategy)}
+						{strategyBuysLabel(rules)}
 						{marketCap === undefined ? null : `; market cap ${marketCap}`}
 					</Text>
 				)}

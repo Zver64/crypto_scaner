@@ -1,4 +1,4 @@
-import type { BacktestStrategyQueryError } from "@/api/generated/api";
+import type { BacktestStrategyMutationError } from "@/api/generated/api";
 import type { StrategyBacktest } from "@/api/generated/models";
 import type {
 	BacktestCoinResult,
@@ -18,7 +18,9 @@ export function backtestFailure(error: unknown): {
 	stop: boolean;
 } {
 	const failure =
-		error instanceof Error ? (error as BacktestStrategyQueryError) : undefined;
+		error instanceof Error
+			? (error as BacktestStrategyMutationError)
+			: undefined;
 	const status = failure?.status;
 	const code = failure?.info?.error?.code;
 	const message =

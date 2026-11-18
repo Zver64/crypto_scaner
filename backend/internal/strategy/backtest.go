@@ -3,7 +3,6 @@ package strategy
 import (
 	"context"
 	"fmt"
-	"slices"
 	"time"
 
 	"crypto-scanner/internal/market"
@@ -207,14 +206,12 @@ const maxBacktests = 2
 // through of, an empty symbol, or from after to, market.ErrInstrumentNotFound, and
 // ErrBacktestBusy while maxBacktests others run.
 func (service *Service) Backtest(ctx context.Context, id uuid.UUID, symbol string, from, to time.Time, withChart bool) (Backtest, error) {
-	entries := service.List()
-	index := slices.IndexFunc(entries, func(entry Entry) bool { return entry.ID == id })
-	if index < 0 {
-		return Backtest{}, ErrNotFound
+	entry, err := service.Get(id)
+	if err != nil {
+		return Backtest{}, err
 	}
-	entry := entries[index]
 	if entry.Compiled == nil {
-		return Backtest{}, fmt.Errorf("%w: %s", ErrInvalidArgument, entry.Problem)
+		return Backtest{}, invalid(entry.Problem)
 	}
 	return service.backtest(ctx, entry, symbol, from, to, withChart)
 }
@@ -234,10 +231,10 @@ func (service *Service) BacktestDraft(ctx context.Context, item Strategy, symbol
 // backtest replays the compiled entry for Backtest and BacktestDraft.
 func (service *Service) backtest(ctx context.Context, entry Entry, symbol string, from, to time.Time, withChart bool) (Backtest, error) {
 	if !from.IsZero() && !to.IsZero() && from.After(to) {
-		return Backtest{}, fmt.Errorf("%w: the period starts after it ends", ErrInvalidArgument)
+		return Backtest{}, invalid("the period starts after it ends")
 	}
 	if symbol = market.NormalizeSymbol(symbol); symbol == "" {
-		return Backtest{}, fmt.Errorf("%w: the symbol is empty", ErrInvalidArgument)
+		return Backtest{}, invalid("the symbol is empty")
 	}
 	select {
 	case service.backtests <- struct{}{}:
@@ -254,7 +251,7 @@ func (service *Service) backtest(ctx context.Context, entry Entry, symbol string
 	// Values of coins that are not active stay unknown, so nothing would
 	// signal.
 	if absent := inactive(active, entry.symbols); len(absent) > 0 {
-		return Backtest{}, fmt.Errorf("%w: %w", ErrInvalidArgument, notActive(absent))
+		return Backtest{}, invalid(notActive(absent))
 	}
 	engine, err := newReplay(service.registry, entry, instrument, active)
 	if err != nil {

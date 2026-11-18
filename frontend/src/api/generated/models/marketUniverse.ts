@@ -9,6 +9,10 @@
  * `POST /api/v1/auth/session` and send `Authorization: Bearer <token>` to every
  * other operation. A request rejected with `401` needs a new session.
  *
+ * Every response carries an `X-Request-ID` header: the caller's own
+ * `X-Request-ID` when it is a safe value, otherwise one the server assigns.
+ * Error bodies repeat it as `request_id`.
+ *
  * The client offers the WebSocket subprotocol `crypto-scanner.live.v1` followed by
  * its session token as a second subprotocol (`Sec-WebSocket-Protocol`); the token is
  * never placed in the URL. The handshake fails with `401` for a missing or invalid
@@ -23,7 +27,7 @@
  */
 
 /**
- * Instruments to select. `spot` (the default) selects every active Spot USDT instrument; `coinm_perpetual` selects only those whose coin has a trading Binance COIN-M perpetual contract.
+ * Instruments to select. `spot` (the default) selects every active Spot USDT instrument; `coinm_perpetual` selects only those whose coin has a trading Binance COIN-M perpetual contract; `favorites` selects the current user's favorites: an analysis has a row for every favorite, active or not, in the favorites order, with the favorites table, and an instrument list only the active ones.
  */
 export type MarketUniverse = typeof MarketUniverse[keyof typeof MarketUniverse];
 
@@ -31,4 +35,5 @@ export type MarketUniverse = typeof MarketUniverse[keyof typeof MarketUniverse];
 export const MarketUniverse = {
   spot: 'spot',
   coinm_perpetual: 'coinm_perpetual',
+  favorites: 'favorites',
 } as const;

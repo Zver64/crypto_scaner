@@ -9,6 +9,10 @@
  * `POST /api/v1/auth/session` and send `Authorization: Bearer <token>` to every
  * other operation. A request rejected with `401` needs a new session.
  *
+ * Every response carries an `X-Request-ID` header: the caller's own
+ * `X-Request-ID` when it is a safe value, otherwise one the server assigns.
+ * Error bodies repeat it as `request_id`.
+ *
  * The client offers the WebSocket subprotocol `crypto-scanner.live.v1` followed by
  * its session token as a second subprotocol (`Sec-WebSocket-Protocol`); the token is
  * never placed in the URL. The handshake fails with `401` for a missing or invalid
@@ -21,35 +25,16 @@
  *
  * OpenAPI spec version: 1.0.0
  */
-import type { Direction } from './direction.ts';
-import type { SignalTargetRatio } from './signalTargetRatio.ts';
-import type { SignalWindow } from './signalWindow.ts';
 import type { StrategyCoins } from './strategyCoins.ts';
-import type { StrategyCoinSource } from './strategyCoinSource.ts';
-import type { StrategyExitExpression } from './strategyExitExpression.ts';
 import type { StrategyID } from './strategyID.ts';
-import type { StrategyMarketCapBound } from './strategyMarketCapBound.ts';
 import type { StrategyMessage } from './strategyMessage.ts';
-import type { StrategySignal } from './strategySignal.ts';
-import type { StrategyStopLossExpression } from './strategyStopLossExpression.ts';
-import type { StrategyTakeProfitExpression } from './strategyTakeProfitExpression.ts';
+import type { StrategyRules } from './strategyRules.ts';
 
 export interface Strategy {
   id: StrategyID;
   name: string;
-  signal: StrategySignal;
-  direction: Direction;
-  /** Entry rule, a CEL expression such as `rsi("1d") > 50 && CrossesAbove(ema("1h", 20), ema("1h", 50))`. */
-  expression: string;
-  exit_expression: StrategyExitExpression;
-  take_profit_expression: StrategyTakeProfitExpression;
-  stop_loss_expression: StrategyStopLossExpression;
+  rules: StrategyRules;
   coins: StrategyCoins;
-  coin_source: StrategyCoinSource;
-  min_market_cap_usd: StrategyMarketCapBound | null;
-  max_market_cap_usd: StrategyMarketCapBound | null;
-  target_ratio: SignalTargetRatio | null;
-  window: SignalWindow | null;
   message: StrategyMessage;
   enabled: boolean;
   /** False when a stored rule no longer compiles; such a strategy is not evaluated. */

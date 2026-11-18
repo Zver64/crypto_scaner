@@ -1,11 +1,12 @@
 import { keepPreviousData } from "@tanstack/react-query";
 
 import {
-	analyzeFavorites,
-	type analyzeFavoritesResponseSuccess,
-	getAnalyzeFavoritesQueryKey,
-	useAnalyzeFavorites,
+	analyzeMarket,
+	type analyzeMarketResponseSuccess,
+	getAnalyzeMarketQueryKey,
+	useAnalyzeMarket,
 } from "@/api/generated/api";
+import { MarketUniverse } from "@/api/generated/models";
 import { useBusinessRequestPermission } from "@/app/business-request-context";
 import { unexpectedApiError } from "@/features/analysis/api-error";
 import { hasExpectedMarketScanResult } from "@/features/analysis/semantics";
@@ -22,7 +23,7 @@ import {
 	topCoinsRequestOptions,
 } from "@/features/top-coins/top-coins";
 
-const selectAnalysis = (response: analyzeFavoritesResponseSuccess) =>
+const selectAnalysis = (response: analyzeMarketResponseSuccess) =>
 	response.data;
 
 export type FavoritesAnalysis = ReturnType<typeof useFavoritesAnalysis>;
@@ -34,8 +35,12 @@ export function useFavoritesAnalysis(settings: VolatilitySettings) {
 	const hasFavorites = favorites.size > 0;
 	const scanCriteria = unfilteredScanCriteria(settings);
 	const criteria = buildTopCoinsCriteria(settings);
-	const request = { criteria, ...topCoinsRequestOptions };
-	const query = useAnalyzeFavorites(request, {
+	const request = {
+		criteria,
+		...topCoinsRequestOptions,
+		universe: MarketUniverse.favorites,
+	};
+	const query = useAnalyzeMarket(request, {
 		query: {
 			enabled: permission.allowed && !isLoading && hasFavorites,
 			meta: {
@@ -46,7 +51,7 @@ export function useFavoritesAnalysis(settings: VolatilitySettings) {
 				userScoped: true,
 			},
 			queryKey: scopedUserQueryKey(
-				getAnalyzeFavoritesQueryKey(request),
+				getAnalyzeMarketQueryKey(request),
 				telegramUserScope(),
 			),
 			// Settings changes keep the current table until the new one arrives.
@@ -56,7 +61,7 @@ export function useFavoritesAnalysis(settings: VolatilitySettings) {
 			// Validated when fetched, so an unexpected response fails the query
 			// and reaches the query cache error handler.
 			queryFn: async ({ signal }) => {
-				const response = await analyzeFavorites(request, { signal });
+				const response = await analyzeMarket(request, { signal });
 				if (!hasExpectedMarketScanResult(response.data, criteria)) {
 					throw unexpectedApiError();
 				}

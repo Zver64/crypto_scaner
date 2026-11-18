@@ -38,7 +38,7 @@ function calculatorForm() {
 			builtFor: "test",
 			close: 62530,
 			dailyVolatilityPercent: undefined,
-			gridLimits: limits.spot,
+			gridLimits: limits,
 			hourlyVolatilityPercent: 1,
 		},
 		null,
@@ -81,11 +81,11 @@ describe("investment minimum check", () => {
 	it("follows the minimum of the committed grid, direction, and leverage", () => {
 		const form = calculatorForm();
 		form.setFieldValue("markets.usdm.leverage", 1);
-		expect(investmentErrors(form)).toEqual(["Binance minimum is 8134.1 USDT"]);
+		expect(investmentErrors(form)).toEqual(["Minimum is 8134.1 USDT"]);
 		form.setFieldValue("markets.usdm.leverage", 10);
 		expect(investmentErrors(form)).toEqual([]);
 		form.setFieldValue("markets.usdm.direction", "short");
-		expect(investmentErrors(form)).toEqual(["Binance minimum is 1047.4 USDT"]);
+		expect(investmentErrors(form)).toEqual(["Minimum is 1047.4 USDT"]);
 		form.setFieldValue("markets.usdm.committed", {
 			...form.state.values.markets.usdm.committed,
 			gridCount: "50",
@@ -96,6 +96,6 @@ describe("investment minimum check", () => {
 	it("checks the typed investment", () => {
 		const form = calculatorForm();
 		form.setFieldValue("markets.usdm.investment", "1000");
-		expect(investmentErrors(form)).toEqual(["Binance minimum is 1032.5 USDT"]);
+		expect(investmentErrors(form)).toEqual(["Minimum is 1032.5 USDT"]);
 	});
 });

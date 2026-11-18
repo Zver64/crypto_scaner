@@ -19,6 +19,11 @@ import {
 	parseGridDecimal,
 } from "@/features/instrument-analysis/grid-estimator/calculator/grid";
 import {
+	BINANCE_GRID_MIN_COUNT,
+	gridMaxCount,
+	marketGridCountLimitParams,
+} from "@/features/instrument-analysis/grid-estimator/calculator/grid-count-limit";
+import {
 	coinmGridMinimumInvestment,
 	spotGridMinimumInvestment,
 	usdmGridMinimumInvestment,
@@ -525,4 +530,44 @@ export function gridMinimumInvestment(
 				coinm.equal_qty_precision,
 			)
 		: null;
+}
+
+/** The grid counts a Binance grid bot accepts for a range. */
+export interface GridCountRange {
+	max: number;
+	min: number;
+	// Whether the range is too narrow for any grid, when `max` is the
+	// market's cap, as Binance shows it.
+	tooNarrow: boolean;
+}
+
+/**
+ * Returns the grid counts a Binance grid bot of the market accepts for a
+ * range, or null without the market's Binance limits or a valid range.
+ */
+export function gridCountRange(
+	market: GridMarket,
+	{ lowerPrice, upperPrice }: Pick<GridInput, "lowerPrice" | "upperPrice">,
+	gridType: GridType,
+	limits: GridLimitsResponse | null,
+): GridCountRange | null {
+	const params = marketGridCountLimitParams(market, limits);
+	if (!params) return null;
+	let max: number;
+	try {
+		max = gridMaxCount(
+			parseGridDecimal(upperPrice, "Upper price"),
+			parseGridDecimal(lowerPrice, "Lower price"),
+			gridType,
+			params,
+		);
+	} catch {
+		return null;
+	}
+	const tooNarrow = max < BINANCE_GRID_MIN_COUNT;
+	return {
+		max: tooNarrow ? params.cap : max,
+		min: BINANCE_GRID_MIN_COUNT,
+		tooNarrow,
+	};
 }

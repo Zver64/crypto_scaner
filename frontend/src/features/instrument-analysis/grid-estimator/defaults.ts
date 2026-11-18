@@ -1,4 +1,4 @@
-import type { SpotGridLimits } from "@/api/generated/models";
+import type { GridLimitsResponse } from "@/api/generated/models";
 import {
 	formatInputNumber,
 	gridBounds,
@@ -24,6 +24,7 @@ import {
 } from "@/features/instrument-analysis/grid-estimator/config";
 import { isInverseMarket } from "@/features/instrument-analysis/grid-estimator/estimate";
 import {
+	gridCountCap,
 	gridCountForRange,
 	gridCountForStep,
 } from "@/features/instrument-analysis/grid-estimator/grid-range";
@@ -62,11 +63,14 @@ export function defaultGridStepPercent(
 
 /**
  * Keeps an edited market's values under a new step, with the grid count of
- * that step. A typed price outside the Binance limits never became the
- * committed one, so its markup gives the last accepted price.
+ * that step up to the market's Binance maximum. A typed price outside the
+ * Binance limits never became the committed one, so its markup gives the last
+ * accepted price.
  */
 export function keptGridFormValues<Values extends GridEstimatorFormValues>(
+	market: GridMarket,
 	bounds: GridBounds,
+	limits: GridLimitsResponse | null,
 	values: Values,
 	rangePercent: number,
 ): Values {
@@ -76,9 +80,11 @@ export function keptGridFormValues<Values extends GridEstimatorFormValues>(
 	const upperPrice = upperPriceLimitError(bounds, values.upperPrice, "")
 		? (upperPriceFromMarkup(bounds, values.markup) ?? values.upperPrice)
 		: values.upperPrice;
+	const range = { ...values, lowerPrice, rangePercent, upperPrice };
 	const { gridCount } = gridCountForRange(
-		{ ...values, lowerPrice, rangePercent, upperPrice },
+		range,
 		values.gridCount,
+		gridCountCap(market, range, limits),
 		bounds.anchor,
 		values.lowerMarkup,
 	);
@@ -90,12 +96,14 @@ export function keptGridFormValues<Values extends GridEstimatorFormValues>(
 function newGridMarketValues(
 	market: GridMarket,
 	close: number | null,
-	gridLimits: SpotGridLimits | null,
+	gridLimits: GridLimitsResponse | null,
 	stepPercent: number | undefined,
 ): GridMarketFormValues {
-	const bounds = gridBounds(market, close, gridLimits);
+	const bounds = gridBounds(market, close, gridLimits?.spot);
 	const { input, lowerMarkup, upperMarkup } = gridRecommendation(
+		market,
 		bounds,
+		gridLimits,
 		stepPercent,
 		"geometric",
 		defaultInvestment(market, bounds.anchor),
@@ -142,7 +150,9 @@ export function gridCalculatorValues(
 			);
 		}
 		const kept = keptGridFormValues(
-			gridBounds(market, values.close, build.gridLimits),
+			market,
+			gridBounds(market, values.close, build.gridLimits?.spot),
+			build.gridLimits,
 			values,
 			rangePercent,
 		);
@@ -189,10 +199,13 @@ function defaultMarkupPercent(
 
 /**
  * Starts both prices at the default markup within the range; the grid count is
- * the largest that keeps the step.
+ * the largest that keeps the step, or the default one without a step, up to
+ * the market's Binance maximum.
  */
 export function gridRecommendation(
+	market: GridMarket,
 	bounds: GridBounds,
+	limits: GridLimitsResponse | null,
 	stepPercent: number | undefined,
 	gridType: GridType,
 	investment: string,
@@ -202,15 +215,21 @@ export function gridRecommendation(
 	const upperPrice = upperPriceFromMarkup(bounds, upperMarkup) ?? "";
 	const lowerMarkup = Math.min(markup, bounds.lowerMarkupMax);
 	const lowerPrice = lowerPriceFromMarkup(bounds, lowerMarkup) ?? "";
+	const maxCount = gridCountCap(
+		market,
+		{ gridType, lowerPrice, upperPrice },
+		limits,
+	);
 	const gridCount =
 		gridCountForStep(
 			upperPrice,
 			lowerPrice,
 			stepPercent,
 			gridType,
+			maxCount,
 			bounds.anchor,
 			lowerMarkup,
-		) ?? DEFAULT_GRID_COUNT;
+		) ?? String(Math.min(Number(DEFAULT_GRID_COUNT), maxCount));
 	return {
 		input: {
 			lowerPrice,

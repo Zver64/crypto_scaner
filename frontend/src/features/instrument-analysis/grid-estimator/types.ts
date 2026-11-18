@@ -1,7 +1,7 @@
 import type Decimal from "decimal.js";
 import type { ComponentProps } from "react";
 
-import type { SpotGridLimits } from "@/api/generated/models";
+import type { GridLimitsResponse } from "@/api/generated/models";
 import type { SegmentedValueGroup } from "@/components/segmented-value-group";
 import type { ArithmeticSpotGridEstimate } from "@/features/instrument-analysis/grid-estimator/calculator/arithmetic-spot-grid";
 import type { FuturesGridEstimate } from "@/features/instrument-analysis/grid-estimator/calculator/futures-grid";
@@ -148,7 +148,7 @@ export interface GridCalculatorBuild {
 	// The latest hourly close.
 	close: number | null;
 	dailyVolatilityPercent: number | undefined;
-	gridLimits: SpotGridLimits | null;
+	gridLimits: GridLimitsResponse | null;
 	hourlyVolatilityPercent: number | undefined;
 }
 
@@ -158,6 +158,14 @@ export type GridRangeValues = Pick<
 	GridEstimatorFormValues,
 	"gridType" | "lowerPrice" | "rangePercent" | "upperPrice"
 >;
+
+export type GridCountCapRange = Pick<
+	GridRangeValues,
+	"gridType" | "lowerPrice" | "upperPrice"
+>;
+
+/** Returns the most grids the calculator derives for a range. */
+export type GridCountCap = (range: GridCountCapRange) => number;
 
 /** A range's grid count, or the kept count and why none was derived. */
 export interface GridRangeCount {

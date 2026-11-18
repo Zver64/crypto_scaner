@@ -9,6 +9,7 @@ import {
 	upperMarkupPercent,
 	upperPriceFromMarkup,
 } from "@/features/instrument-analysis/grid-estimator/bounds";
+import { GRID_MAX_COUNT } from "@/features/instrument-analysis/grid-estimator/calculator/grid";
 import type { GridType } from "@/features/instrument-analysis/grid-estimator/calculator/types";
 import { DEFAULT_INVESTMENT } from "@/features/instrument-analysis/grid-estimator/config";
 import {
@@ -28,14 +29,27 @@ import {
 	evenUpperBound,
 	gridCountForStep,
 } from "@/features/instrument-analysis/grid-estimator/grid-range";
-import type { GridBounds } from "@/features/instrument-analysis/grid-estimator/types";
+import type {
+	GridBounds,
+	GridCountCapRange,
+} from "@/features/instrument-analysis/grid-estimator/types";
+
+// Derives grid counts up to the calculator maximum, as without Binance limits.
+const noCap = () => GRID_MAX_COUNT;
 
 function recommend(
 	bounds: GridBounds,
 	stepPercent: number | undefined,
 	gridType: GridType = "geometric",
 ) {
-	return gridRecommendation(bounds, stepPercent, gridType, DEFAULT_INVESTMENT);
+	return gridRecommendation(
+		"usdm",
+		bounds,
+		null,
+		stepPercent,
+		gridType,
+		DEFAULT_INVESTMENT,
+	);
 }
 
 describe("defaultGridStepPercent", () => {
@@ -71,7 +85,7 @@ describe("keptGridFormValues", () => {
 			upperPrice: "110",
 		} as const;
 
-		expect(keptGridFormValues(bounds, values, 5)).toEqual({
+		expect(keptGridFormValues("usdm", bounds, null, values, 5)).toEqual({
 			...values,
 			gridCount: "4",
 			rangePercent: 5,
@@ -85,7 +99,9 @@ describe("keptGridFormValues", () => {
 			minPrice: new Decimal(32),
 		};
 		const { lowerPrice } = keptGridFormValues(
+			"usdm",
 			bounds,
+			null,
 			{
 				direction: "long",
 				gridCount: "99",
@@ -144,7 +160,9 @@ describe("gridCalculatorValues", () => {
 			new Set(["usdm"]),
 		);
 		const expected = keptGridFormValues(
+			"usdm",
 			gridBounds("usdm", 100, null),
+			null,
 			{ ...usdm, edited: true },
 			2,
 		);
@@ -278,6 +296,7 @@ describe("spot grid recommendations", () => {
 					"1230",
 					stepPercent,
 					gridType,
+					GRID_MAX_COUNT,
 				);
 				if (!gridCount) throw new Error("missing grid count");
 				const input = {
@@ -302,10 +321,20 @@ describe("spot grid recommendations", () => {
 	it("does not add a grid when rounding a markup-derived lower price down", () => {
 		expect(lowerPriceFromMarkup(at(2.13), 25)).toBe("1.597");
 		expect(lowerPriceFromMarkup(at(2130), 25)).toBe("1597");
-		expect(gridCountForStep("2130", "1597", 0.722, "geometric")).toBe("40");
-		expect(gridCountForStep("2130", "1597", 0.722, "geometric", 2130, 25)).toBe(
-			"39",
-		);
+		expect(
+			gridCountForStep("2130", "1597", 0.722, "geometric", GRID_MAX_COUNT),
+		).toBe("40");
+		expect(
+			gridCountForStep(
+				"2130",
+				"1597",
+				0.722,
+				"geometric",
+				GRID_MAX_COUNT,
+				2130,
+				25,
+			),
+		).toBe("39");
 		const input = {
 			lowerPrice: "1597",
 			upperPrice: "2130",
@@ -325,9 +354,15 @@ describe("spot grid recommendations", () => {
 				upperPrice: "110.5",
 			};
 			const ticked = { ...bounds, tickSize: new Decimal("0.0001") };
-			const gridCount = gridCountForStep("110.5", "90", 1, gridType);
-			const upper = evenUpperBound(ticked, range, 10);
-			const lower = evenLowerBound(ticked, range, 10);
+			const gridCount = gridCountForStep(
+				"110.5",
+				"90",
+				1,
+				gridType,
+				GRID_MAX_COUNT,
+			);
+			const upper = evenUpperBound(ticked, range, 10, noCap);
+			const lower = evenLowerBound(ticked, range, 10, noCap);
 			if (!upper || !lower || !gridCount) throw new Error("missing bound");
 			expect(Number(upper.upperPrice)).toBeLessThan(110.5);
 			expect(Number(lower.lowerPrice)).toBeGreaterThan(90);
@@ -338,7 +373,13 @@ describe("spot grid recommendations", () => {
 			]) {
 				const markup = lowerMarkupPercent(100, even.lowerPrice, "ceil") ?? 0;
 				expect(
-					gridCountForStep(even.upperPrice, even.lowerPrice, 1, gridType),
+					gridCountForStep(
+						even.upperPrice,
+						even.lowerPrice,
+						1,
+						gridType,
+						GRID_MAX_COUNT,
+					),
 				).toBe(gridCount);
 				expect(
 					minimumStep(
@@ -351,11 +392,33 @@ describe("spot grid recommendations", () => {
 						gridType,
 					),
 				).toBeCloseTo(1, 4);
-				expect(evenUpperBound(ticked, even, markup)).toBeNull();
-				expect(evenLowerBound(ticked, even, markup)).toBeNull();
+				expect(evenUpperBound(ticked, even, markup, noCap)).toBeNull();
+				expect(evenLowerBound(ticked, even, markup, noCap)).toBeNull();
 			}
 		},
 	);
+
+	it("keeps a range bound when the moved range allows fewer grids", () => {
+		const range = {
+			gridType: "geometric" as const,
+			lowerPrice: "90",
+			rangePercent: 1,
+			upperPrice: "110.5",
+		};
+		const ticked = { ...bounds, tickSize: new Decimal("0.0001") };
+		const gridCount = Number(
+			gridCountForStep("110.5", "90", 1, "geometric", GRID_MAX_COUNT),
+		);
+		// The original range allows its grid count, the moved one a grid less.
+		const cap = ({ lowerPrice, upperPrice }: GridCountCapRange) =>
+			lowerPrice === range.lowerPrice && upperPrice === range.upperPrice
+				? gridCount
+				: gridCount - 1;
+		expect(evenUpperBound(ticked, range, 10, noCap)).not.toBeNull();
+		expect(evenLowerBound(ticked, range, 10, noCap)).not.toBeNull();
+		expect(evenUpperBound(ticked, range, 10, cap)).toBeNull();
+		expect(evenLowerBound(ticked, range, 10, cap)).toBeNull();
+	});
 
 	it("aligns the upper price above a lower price rounded down from its markup", () => {
 		const ticked = {
@@ -371,7 +434,7 @@ describe("spot grid recommendations", () => {
 			rangePercent: 0.722,
 			upperPrice: "2.4469",
 		};
-		const upper = evenUpperBound(ticked, range, 14.56);
+		const upper = evenUpperBound(ticked, range, 14.56, noCap);
 		if (!upper) throw new Error("missing upper bound");
 		const even = { ...range, upperPrice: upper.upperPrice };
 		expect(
@@ -380,6 +443,7 @@ describe("spot grid recommendations", () => {
 				lowerPrice,
 				0.722,
 				"geometric",
+				GRID_MAX_COUNT,
 				2.13,
 				14.56,
 			),
@@ -389,11 +453,12 @@ describe("spot grid recommendations", () => {
 				lowerPrice,
 				0.722,
 				"geometric",
+				GRID_MAX_COUNT,
 				2.13,
 				14.56,
 			),
 		);
-		expect(evenUpperBound(ticked, even, 14.56)).toBeNull();
+		expect(evenUpperBound(ticked, even, 14.56, noCap)).toBeNull();
 	});
 
 	it("keeps a range bound when an even grid would cross the anchor or fit no step", () => {
@@ -403,18 +468,19 @@ describe("spot grid recommendations", () => {
 			rangePercent: 1,
 			upperPrice: "100.2",
 		};
-		expect(evenUpperBound(bounds, range, 10)).toBeNull();
+		expect(evenUpperBound(bounds, range, 10, noCap)).toBeNull();
 		expect(
 			evenLowerBound(
 				bounds,
 				{ ...range, lowerPrice: "99.9", upperPrice: "100.5" },
 				0.1,
+				noCap,
 			),
 		).toBeNull();
 		// More than the maximum grid count fits, so the steps stay wider.
 		const capped = { ...range, rangePercent: 0.1, upperPrice: "100" };
 		expect(
-			evenUpperBound(at(10), { ...capped, lowerPrice: "9" }, 10),
+			evenUpperBound(at(10), { ...capped, lowerPrice: "9" }, 10, noCap),
 		).toBeNull();
 	});
 
@@ -429,6 +495,7 @@ describe("spot grid recommendations", () => {
 					upperPrice: "33.47",
 				},
 				46.23,
+				noCap,
 			),
 		).toBeNull();
 		const ticked = {
@@ -445,6 +512,7 @@ describe("spot grid recommendations", () => {
 					upperPrice: "24.9346",
 				},
 				lowerMarkupPercent(18.125, "17.9387", "ceil") ?? 0,
+				noCap,
 			),
 		).toBeNull();
 	});
@@ -457,15 +525,47 @@ describe("spot grid recommendations", () => {
 			upperPrice: "110",
 		};
 		const stepPercent = minimumStep(input, "geometric");
-		expect(gridCountForStep("110", "90", stepPercent, "geometric")).toBe("3");
+		expect(
+			gridCountForStep("110", "90", stepPercent, "geometric", GRID_MAX_COUNT),
+		).toBe("3");
 		const range = {
 			gridType: "geometric" as const,
 			lowerPrice: "90",
 			rangePercent: stepPercent,
 			upperPrice: "110",
 		};
-		expect(evenUpperBound(bounds, range, 10)).toBeNull();
-		expect(evenLowerBound(bounds, range, 10)).toBeNull();
+		expect(evenUpperBound(bounds, range, 10, noCap)).toBeNull();
+		expect(evenLowerBound(bounds, range, 10, noCap)).toBeNull();
+	});
+
+	it("caps the default grid count at the Binance maximum", () => {
+		const limits = {
+			coinm: null,
+			spot: {
+				ask_multiplier_up: 5,
+				average_price: 100,
+				bid_multiplier_down: 0.2,
+				max_price: 0,
+				min_notional: 5,
+				min_price: 1,
+				min_qty: 1,
+				step_size: 1,
+				tick_size: 1,
+			},
+			symbol: "TESTUSDT",
+			usdm: null,
+		};
+		// 90–110 at a tick of 1 keeps at most 18 geometric grids.
+		expect(
+			gridRecommendation(
+				"spot",
+				bounds,
+				limits,
+				0,
+				"geometric",
+				DEFAULT_INVESTMENT,
+			).input,
+		).toMatchObject({ gridCount: "18", lowerPrice: "90", upperPrice: "110" });
 	});
 
 	it("returns partial fallbacks for missing market data and unsupported values", () => {
@@ -484,10 +584,18 @@ describe("spot grid recommendations", () => {
 		expect(lowerPriceFromMarkup(at(105), 100)).toBeNull();
 		expect(lowerMarkupPercent(105, "")).toBeNull();
 		expect(upperMarkupPercent(null, "105")).toBeNull();
-		expect(gridCountForStep("105", "105", 1, "geometric")).toBeNull();
-		expect(gridCountForStep("105", "104.9", 1, "geometric")).toBeNull();
-		expect(gridCountForStep("105", "70", 0, "geometric")).toBeNull();
-		expect(gridCountForStep("105", "0.0001", 0.001, "geometric")).toBe("1000");
+		expect(
+			gridCountForStep("105", "105", 1, "geometric", GRID_MAX_COUNT),
+		).toBeNull();
+		expect(
+			gridCountForStep("105", "104.9", 1, "geometric", GRID_MAX_COUNT),
+		).toBeNull();
+		expect(
+			gridCountForStep("105", "70", 0, "geometric", GRID_MAX_COUNT),
+		).toBeNull();
+		expect(gridCountForStep("105", "0.0001", 0.001, "geometric", 500)).toBe(
+			"500",
+		);
 	});
 });
 

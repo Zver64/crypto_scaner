@@ -55,7 +55,7 @@ function investmentMinimumError(
 	if (!minimum) return undefined;
 	try {
 		return parseGridDecimal(values.investment, "Investment").lt(minimum.amount)
-			? `Binance minimum is ${minimum.text}`
+			? `Minimum is ${minimum.text}`
 			: undefined;
 	} catch {
 		return undefined;

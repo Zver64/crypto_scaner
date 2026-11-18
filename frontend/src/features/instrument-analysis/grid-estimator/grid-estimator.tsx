@@ -48,6 +48,7 @@ export function GridEstimator({
 		dailyRange,
 		defaultRangePercent,
 		estimate,
+		gridCounts,
 		hourlyRange,
 		minimumInvestment,
 		priceUnit,
@@ -156,6 +157,7 @@ export function GridEstimator({
 				disabled={disabled}
 				commitError={commitError}
 				form={form}
+				gridCounts={gridCounts}
 				investmentAsset={marginAsset(market, marketOptions.baseAsset)}
 				market={market}
 				minimumInvestment={minimumInvestment}

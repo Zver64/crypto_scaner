@@ -1,5 +1,6 @@
 import type Decimal from "decimal.js";
 
+import type { GridLimitsResponse } from "@/api/generated/models";
 import {
 	formatCalculatorInput,
 	lowerMarkupPercent,
@@ -20,11 +21,15 @@ import type {
 import { DEFAULT_INVESTMENT } from "@/features/instrument-analysis/grid-estimator/config";
 import {
 	calculateSpotGridInput,
+	gridCountRange,
 	spotGridMinimumStepPercent,
 } from "@/features/instrument-analysis/grid-estimator/estimate";
 import type {
 	GridBounds,
+	GridCountCap,
+	GridCountCapRange,
 	GridEstimatorFormValues,
+	GridMarket,
 	GridRangeCount,
 	GridRangeValues,
 } from "@/features/instrument-analysis/grid-estimator/types";
@@ -91,16 +96,32 @@ function rangeGridCount(
 }
 
 /**
- * Returns the largest grid count whose minimum step stays at or above
- * `stepPercent` for the given price range. When the lower price was derived
- * from `lowerMarkupPercent` below `anchor`, the count is also capped by the
- * exact markup so rounding the lower price down never adds a grid.
+ * Returns the most grids the calculator derives for a range: the Binance
+ * maximum of the market, or `GRID_MAX_COUNT` without its Binance limits or a
+ * valid range.
+ */
+export function gridCountCap(
+	market: GridMarket,
+	range: GridCountCapRange,
+	limits: GridLimitsResponse | null,
+): number {
+	return (
+		gridCountRange(market, range, range.gridType, limits)?.max ?? GRID_MAX_COUNT
+	);
+}
+
+/**
+ * Returns the largest grid count up to `maxCount` whose minimum step stays at
+ * or above `stepPercent` for the given price range. When the lower price was
+ * derived from `lowerMarkupPercent` below `anchor`, the count is also capped
+ * by the exact markup so rounding the lower price down never adds a grid.
  */
 export function gridCountForStep(
 	upperPrice: string,
 	lowerPrice: string,
 	stepPercent: number | undefined,
 	gridType: GridType,
+	maxCount: number,
 	anchor?: number | null,
 	lowerMarkupPercent?: number,
 ): string | null {
@@ -116,7 +137,7 @@ export function gridCountForStep(
 			anchor,
 			lowerMarkupPercent,
 		);
-		return derived && GridDecimal.min(derived.count, GRID_MAX_COUNT).toString();
+		return derived && GridDecimal.min(derived.count, maxCount).toString();
 	} catch {
 		return null;
 	}
@@ -125,12 +146,13 @@ export function gridCountForStep(
 // Returns a range with its grid count, the lower price that count is derived
 // from, and the ratio of the upper to the lower price at which that many grids
 // keep their minimum step exactly at `rangePercent`. Returns null when the
-// range has no such grid, or when the grid count is capped, which keeps the
-// steps wider than the selected one.
+// range has no such grid, or when the grid count is capped at `maxCount`,
+// which keeps the steps wider than the selected one.
 function evenGridRange(
 	bounds: GridBounds,
 	range: GridRangeValues,
 	lowerMarkup: number,
+	maxCount: number,
 ) {
 	const { anchor } = bounds;
 	const parsed = parsedRange(range.lowerPrice, range.upperPrice);
@@ -148,7 +170,7 @@ function evenGridRange(
 		anchor,
 		lowerMarkup,
 	);
-	if (!derived || derived.count.gt(GRID_MAX_COUNT)) return null;
+	if (!derived || derived.count.gt(maxCount)) return null;
 	const ratio = gridRangeRatio(
 		new GridDecimal(range.rangePercent).div(100),
 		derived.count.toNumber(),
@@ -178,16 +200,17 @@ function priceUnit(bounds: GridBounds, price: Decimal): Decimal {
  * Returns the upper price moved down to where the grid's minimum step is
  * exactly `rangePercent` with its grid count kept, and its markup. Returns
  * null when the range is already even up to price rounding, narrower than one
- * step, or capped at the maximum grid count, or when the price would fall
- * below the anchor.
+ * step, or capped at the `maxCount` of the range or of the moved one, or when
+ * the price would fall below the anchor.
  */
 export function evenUpperBound(
 	bounds: GridBounds,
 	range: GridRangeValues,
 	lowerMarkup: number,
+	maxCount: GridCountCap,
 ): Pick<GridEstimatorFormValues, "markup" | "upperPrice"> | null {
 	try {
-		const even = evenGridRange(bounds, range, lowerMarkup);
+		const even = evenGridRange(bounds, range, lowerMarkup, maxCount(range));
 		if (!even) return null;
 		// Measure from the lower price the grid count is derived from, and round
 		// up so the rounding never takes a grid away.
@@ -211,6 +234,7 @@ export function evenUpperBound(
 				range.lowerPrice,
 				range.rangePercent,
 				range.gridType,
+				maxCount({ ...range, upperPrice }),
 				bounds.anchor,
 				lowerMarkup,
 			) !== even.gridCount
@@ -226,16 +250,17 @@ export function evenUpperBound(
  * Returns the lower price moved up to where the grid's minimum step is exactly
  * `rangePercent` with its grid count kept, and its markup. Returns null when
  * the range is already even up to price rounding, narrower than one step, or
- * capped at the maximum grid count, or when the price would rise above the
- * anchor.
+ * capped at the `maxCount` of the range or of the moved one, or when the price
+ * would rise above the anchor.
  */
 export function evenLowerBound(
 	bounds: GridBounds,
 	range: GridRangeValues,
 	lowerMarkup: number,
+	maxCount: GridCountCap,
 ): Pick<GridEstimatorFormValues, "lowerMarkup" | "lowerPrice"> | null {
 	try {
-		const even = evenGridRange(bounds, range, lowerMarkup);
+		const even = evenGridRange(bounds, range, lowerMarkup, maxCount(range));
 		if (!even) return null;
 		// Round the price down and its markup up, so neither the rounding nor
 		// the markup cap of gridCountForStep takes a grid away.
@@ -259,6 +284,7 @@ export function evenLowerBound(
 				lowerPrice,
 				range.rangePercent,
 				range.gridType,
+				maxCount({ ...range, lowerPrice }),
 				bounds.anchor,
 				markup,
 			) !== even.gridCount
@@ -271,14 +297,15 @@ export function evenLowerBound(
 }
 
 /**
- * Returns the grid count of a new range: the largest that keeps its minimum
- * step at `rangePercent`. Keeps `gridCount`, with an error, when the range is
- * narrower than one step, and without one when the range is not valid yet or
- * no step is selected.
+ * Returns the grid count of a new range: the largest up to `maxCount` that
+ * keeps its minimum step at `rangePercent`. Keeps `gridCount`, with an error,
+ * when the range is narrower than one step, and without one when the range is
+ * not valid yet or no step is selected.
  */
 export function gridCountForRange(
 	range: GridRangeValues,
 	gridCount: string,
+	maxCount: number,
 	anchor: number | null,
 	lowerMarkup: number,
 ): GridRangeCount {
@@ -288,6 +315,7 @@ export function gridCountForRange(
 		range.lowerPrice,
 		range.rangePercent,
 		range.gridType,
+		maxCount,
 		anchor,
 		lowerMarkup,
 	);

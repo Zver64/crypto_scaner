@@ -13,6 +13,7 @@ import {
 } from "@/features/instrument-analysis/grid-estimator/bounds";
 import type { GridInput } from "@/features/instrument-analysis/grid-estimator/calculator/types";
 import {
+	gridCountRange,
 	gridMarketEstimate,
 	priceAsset,
 } from "@/features/instrument-analysis/grid-estimator/estimate";
@@ -20,12 +21,14 @@ import { marketField } from "@/features/instrument-analysis/grid-estimator/field
 import {
 	evenLowerBound,
 	evenUpperBound,
+	gridCountCap,
 	gridCountForRange,
 	gridCountStepError,
 	gridCountStepPercent,
 } from "@/features/instrument-analysis/grid-estimator/grid-range";
 import { marketMinimumInvestment } from "@/features/instrument-analysis/grid-estimator/investment-minimum";
 import type {
+	GridCountCap,
 	GridInputField,
 	GridMarket,
 	GridMarketFormValues,
@@ -97,6 +100,11 @@ export function useGridMarket({
 	const minimumInvestment =
 		marketMinimumInvestment(market, values, gridLimits, baseAsset)?.text ??
 		null;
+	// The grid counts Binance accepts for the committed grid; the form checks
+	// the grid count against them.
+	const gridCounts = gridCountRange(market, committed, gridType, gridLimits);
+	const maxCount: GridCountCap = (range) =>
+		gridCountCap(market, range, gridLimits);
 
 	const current = () => form.state.values.markets[market];
 	// Values are written as their inputs would, without running the listeners
@@ -122,6 +130,7 @@ export function useGridMarket({
 		const { gridCount } = gridCountForRange(
 			range,
 			input.gridCount,
+			maxCount(range),
 			anchor,
 			markups.lowerMarkup ?? lowerMarkup,
 		);
@@ -167,6 +176,7 @@ export function useGridMarket({
 	const { error: rangeError } = gridCountForRange(
 		committedRange(values),
 		committed.gridCount,
+		maxCount(committedRange(values)),
 		anchor,
 		values.lowerMarkup,
 	);
@@ -177,6 +187,7 @@ export function useGridMarket({
 		bounds,
 		committedRange(values),
 		values.lowerMarkup,
+		maxCount,
 	);
 	const alignUpperPrice =
 		evenUpper &&
@@ -189,6 +200,7 @@ export function useGridMarket({
 		bounds,
 		committedRange(values),
 		values.lowerMarkup,
+		maxCount,
 	);
 	const alignLowerPrice =
 		evenLower &&
@@ -309,6 +321,7 @@ export function useGridMarket({
 		dailyRange,
 		defaultRangePercent,
 		estimate,
+		gridCounts,
 		hourlyRange,
 		minimumInvestment,
 		priceUnit,

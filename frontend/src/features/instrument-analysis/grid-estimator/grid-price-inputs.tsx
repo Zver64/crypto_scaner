@@ -1,6 +1,7 @@
 import { SimpleGrid } from "@mantine/core";
 
 import type { GridInput } from "@/features/instrument-analysis/grid-estimator/calculator/types";
+import type { GridCountRange } from "@/features/instrument-analysis/grid-estimator/estimate";
 import { marketField } from "@/features/instrument-analysis/grid-estimator/fields";
 import type {
 	GridInputField,
@@ -16,6 +17,8 @@ interface GridPriceInputsProps extends Pick<
 	committed: GridInput;
 	disabled: boolean;
 	form: ReturnType<typeof useGridCalculatorForm>;
+	// The grid counts Binance accepts.
+	gridCounts: GridCountRange | null;
 	investmentAsset: string;
 	market: GridMarket;
 	// The smallest investment Binance accepts, with its currency.
@@ -31,6 +34,7 @@ export function GridPriceInputs({
 	committed,
 	disabled,
 	form,
+	gridCounts,
 	investmentAsset,
 	market,
 	minimumInvestment,
@@ -52,7 +56,14 @@ export function GridPriceInputs({
 			label: `Upper price (${priceUnit})`,
 			name: "upperPrice",
 		},
-		{ allowDecimal: false, label: "Grid count", name: "gridCount" },
+		{
+			allowDecimal: false,
+			label: "Grid count",
+			name: "gridCount",
+			placeholder: gridCounts
+				? `${gridCounts.min}–${gridCounts.max}`
+				: undefined,
+		},
 		{
 			allowDecimal: true,
 			label: `${investmentAsset} investment`,

@@ -6,6 +6,7 @@ import type { PriceCandle } from "@/features/instrument-analysis/candle-page";
 import { latestAvailableCandle } from "@/features/instrument-analysis/grid-estimator/bounds";
 import { GRID_MARKET_TABS } from "@/features/instrument-analysis/grid-estimator/config";
 import { gridCalculatorValues } from "@/features/instrument-analysis/grid-estimator/defaults";
+import { gridCountLimitErrors } from "@/features/instrument-analysis/grid-estimator/grid-count-limit";
 import { investmentMinimumErrors } from "@/features/instrument-analysis/grid-estimator/investment-minimum";
 import type {
 	GridCalculatorBuild,
@@ -41,14 +42,13 @@ export function useGridCalculatorForm({
 }: GridCalculatorFormOptions) {
 	const builtFor = `${ready}:${rangesKey}`;
 	const close = latestAvailableCandle(candles)?.close ?? null;
-	const spotLimits = gridLimits?.spot ?? null;
 	const [defaultValues] = useState(() =>
 		gridCalculatorValues(
 			{
 				builtFor,
 				close,
 				dailyVolatilityPercent,
-				gridLimits: spotLimits,
+				gridLimits,
 				hourlyVolatilityPercent,
 			},
 			null,
@@ -58,8 +58,12 @@ export function useGridCalculatorForm({
 	const form = useAppForm({
 		defaultValues,
 		validators: {
-			onChange: ({ value }) =>
-				investmentMinimumErrors(value, gridLimits, baseAsset),
+			onChange: ({ value }) => ({
+				fields: {
+					...investmentMinimumErrors(value, gridLimits, baseAsset).fields,
+					...gridCountLimitErrors(value, gridLimits).fields,
+				},
+			}),
 		},
 	});
 	// The one effect that synchronizes state (see frontend/AGENTS.md): new
@@ -75,7 +79,7 @@ export function useGridCalculatorForm({
 				builtFor,
 				close,
 				dailyVolatilityPercent,
-				gridLimits: spotLimits,
+				gridLimits,
 				hourlyVolatilityPercent,
 			};
 			form.reset(
@@ -84,7 +88,8 @@ export function useGridCalculatorForm({
 			);
 		}
 		// Neither the first values nor a reset are validated, so the
-		// investments are checked against the minimums here.
+		// investments and grid counts are checked against the Binance limits
+		// here.
 		void form.validate("change");
 	}, [
 		baseAsset,
@@ -94,7 +99,6 @@ export function useGridCalculatorForm({
 		form,
 		gridLimits,
 		hourlyVolatilityPercent,
-		spotLimits,
 	]);
 	return form;
 }

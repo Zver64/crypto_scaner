@@ -181,13 +181,6 @@ export interface StrategyVariableSets {
 	exit: StrategyRuleVariables;
 }
 
-// A token of a strategy expression and its position in the source.
-export interface Token {
-	text: string;
-	start: number;
-	end: number;
-}
-
 // Whether a strategy only signals or trades, fixed when it is created.
 export type StrategyKind = "signal" | "strategy";
 

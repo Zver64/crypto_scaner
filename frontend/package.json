@@ -26,7 +26,7 @@
     "@mantine/notifications": "^9.5.1",
     "@mantine/vanilla-extract": "^9.5.1",
     "@microcharts/react": "^0.18.1",
-    "@react-querybuilder/expr": "^8.26.0",
+    "@react-querybuilder/expr": "^8.27.0",
     "@tabler/icons-react": "^3.48.0",
     "@tanstack/react-devtools": "^0.10.9",
     "@tanstack/react-form": "^1.33.5",
@@ -41,7 +41,7 @@
     "lightweight-charts": "^5.2.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "react-querybuilder": "^8.26.0",
+    "react-querybuilder": "^8.27.0",
     "spel2js": "^0.2.9",
     "zod": "^4.6.7"
   },

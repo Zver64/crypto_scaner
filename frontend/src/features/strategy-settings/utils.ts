@@ -37,18 +37,14 @@ import {
 import { intervalLabel } from "@/features/candle-chart/utils";
 import {
 	anyField,
-	arithmeticTokens,
 	variableGroups,
-	comparisonTokens,
 	defaultDirections,
 	defaultSignalTargetRatio,
 	defaultSignalWindow,
 	directionLabels,
 	kindNouns,
-	operandBoundaries,
 	signalTargetRatios,
 	signalWindows,
-	tokenPattern,
 } from "@/features/strategy-settings/constants";
 import {
 	callSource,
@@ -83,7 +79,6 @@ import type {
 	StrategyVariable,
 	StrategyVariables,
 	StrategyVariableSets,
-	Token,
 } from "@/features/strategy-settings/types";
 import { type ApiError, describeApiError } from "@/utils/api-error";
 import { formatMarketCapUsd, usdPerMillion } from "@/utils/market-cap";
@@ -227,16 +222,12 @@ function crossOperator(name: string): StrategyOperator | undefined {
 	}
 }
 
-// Crossings take any operands, and ranges of an expression are written like
-// the stock ranges of a field; other rules go to the expression processor,
+// Crossings take any operands; other rules go to the expression processor,
 // which exports plain rules as before.
 function strategyRuleProcessor(
 	rule: Parameters<RuleProcessor>[0],
 	options: Parameters<RuleProcessor>[1],
 ): string {
-	if (rule.lhs && isRangeOperator(rule.operator)) {
-		return expressionRange(rule.lhs, rule.operator, rule.value);
-	}
 	const name = crossFunction(rule.operator);
 	if (!name) return expressionRuleProcessor(rule, options);
 	const left = rule.lhs ? expressionSource(rule.lhs) : rule.field;
@@ -245,23 +236,6 @@ function strategyRuleProcessor(
 			? expressionSource(rule.value as ExpressionNode)
 			: String(rule.value);
 	return callSource(name, [left, right]);
-}
-
-// A range of an expression with its bounds in ascending order. The expr
-// package's CEL processor drops the expression of a range
-// (https://github.com/react-querybuilder/react-querybuilder/issues/1137);
-// once that is fixed, leave ranges to it and remove this function.
-function expressionRange(
-	lhs: ExpressionNode,
-	operator: string,
-	value: unknown,
-): string {
-	const bounds = Array.isArray(value) ? value.map(Number) : [];
-	const [low, high] = [Math.min(...bounds), Math.max(...bounds)];
-	const left = expressionSource(lhs);
-	return operator === "between"
-		? `(${left} >= ${low} && ${left} <= ${high})`
-		: `(${left} < ${low} || ${left} > ${high})`;
 }
 
 // The CEL expression the backend evaluates, with numbers parsed from their
@@ -275,12 +249,10 @@ export function strategyExpression(query: StrategyQuery): string {
 	});
 }
 
-// Restores the builder query from a stored expression, which may be
-// written by hand without parentheses around arithmetic operands. Unknown
-// parts are dropped, so an expression the builder cannot show opens
-// incomplete.
+// Restores the builder query from a stored expression. Unknown parts are
+// dropped, so an expression the builder cannot show opens incomplete.
 export function strategyQuery(expression: string): StrategyQuery {
-	const parsed = parseCEL(parenthesizeOperands(expression), {
+	const parsed = parseCEL(expression, {
 		customExpressionHandler: crossRule,
 		getExpression: expressionParser,
 	});
@@ -297,85 +269,6 @@ export function importedStrategyQuery(
 		!strategyQueryDropped(expression, query)
 		? query
 		: undefined;
-}
-
-// The parser restores arithmetic operands of comparisons only in
-// parentheses, as the builder writes them, so volume("1h") >= 1.5 * x
-// becomes volume("1h") >= (1.5 * x). A negative number stays bare.
-// Remove once parseCEL reads such operands itself
-// (https://github.com/react-querybuilder/react-querybuilder/issues/1136).
-export function parenthesizeOperands(expression: string): string {
-	const tokens: Token[] = [];
-	for (const match of expression.matchAll(tokenPattern)) {
-		if (match[0].trim() === "") continue;
-		tokens.push({
-			text: match[0],
-			start: match.index,
-			end: match.index + match[0].length,
-		});
-	}
-	const wraps: [number, number][] = [];
-	tokens.forEach((token, index) => {
-		if (!comparisonTokens.includes(token.text)) return;
-		for (const [first, last] of [
-			[operandStart(tokens, index), index - 1],
-			[index + 1, operandEnd(tokens, index)],
-		] as const) {
-			const operand = tokens.slice(first, last + 1);
-			if (needsParentheses(operand)) {
-				wraps.push([tokens[first].start, tokens[last].end]);
-			}
-		}
-	});
-	let result = expression;
-	for (const [start, end] of wraps.sort(([a], [b]) => b - a)) {
-		result = `${result.slice(0, start)}(${result.slice(start, end)})${result.slice(end)}`;
-	}
-	return result;
-}
-
-function operandStart(tokens: readonly Token[], comparison: number): number {
-	let depth = 0;
-	for (let index = comparison - 1; index >= 0; index--) {
-		const { text } = tokens[index];
-		if (text === ")") depth++;
-		else if (text === "(") {
-			if (depth === 0) return index + 1;
-			depth--;
-		} else if (
-			depth === 0 &&
-			(operandBoundaries.includes(text) || text === "!")
-		)
-			return index + 1;
-	}
-	return 0;
-}
-
-function operandEnd(tokens: readonly Token[], comparison: number): number {
-	let depth = 0;
-	for (let index = comparison + 1; index < tokens.length; index++) {
-		const { text } = tokens[index];
-		if (text === "(") depth++;
-		else if (text === ")") {
-			if (depth === 0) return index - 1;
-			depth--;
-		} else if (depth === 0 && operandBoundaries.includes(text))
-			return index - 1;
-	}
-	return tokens.length - 1;
-}
-
-// Whether an operand calculates outside parentheses.
-function needsParentheses(operand: readonly Token[]): boolean {
-	const [sign, number] = operand;
-	if (operand.length === 2 && sign?.text === "-" && /^[\d.]/.test(number.text))
-		return false;
-	let depth = 0;
-	return operand.some(({ text }) => {
-		if (text === "(") depth++;
-		else if (text === ")") depth--;
-		return depth === 0 && arithmeticTokens.includes(text);
-	});
 }
 
 // Whether restoring expression dropped conditions the builder cannot show.

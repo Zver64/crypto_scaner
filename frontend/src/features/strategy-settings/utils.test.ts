@@ -23,7 +23,6 @@ import {
 	marketCapRangeLabel,
 	marketCapUsd,
 	newStrategyDraft,
-	parenthesizeOperands,
 	strategyExpression,
 	strategyFormDirty,
 	strategyInput,
@@ -154,30 +153,6 @@ const strategyCatalog: StrategyCatalog = {
 	intervals: [CandleInterval["1h"], CandleInterval["1d"]],
 	position_variables: [{ count: false, name: "pnl" }],
 };
-
-describe("parenthesizeOperands", () => {
-	it.each([
-		['volume("1h") >= 1.5 * sma("1h")', 'volume("1h") >= (1.5 * sma("1h"))'],
-		[
-			'close("1h") - open("1h") > Abs(low("1h"))',
-			'(close("1h") - open("1h")) > Abs(low("1h"))',
-		],
-		[
-			'close("1h") > -1 && (open("1h") < 2)',
-			'close("1h") > -1 && (open("1h") < 2)',
-		],
-		[
-			'CrossesAbove(close("1h") + 1, open("1h")) || !(low("1h") * 2 < 3)',
-			'CrossesAbove(close("1h") + 1, open("1h")) || !((low("1h") * 2) < 3)',
-		],
-		[
-			'Prev(close("1h") - open("1h")) > 0',
-			'Prev(close("1h") - open("1h")) > 0',
-		],
-	])("parenthesizes %s", (expression, expected) => {
-		expect(parenthesizeOperands(expression)).toBe(expected);
-	});
-});
 
 describe("replaceFunction", () => {
 	const x = { kind: "field", field: 'close("1h")' } as const;
@@ -339,6 +314,32 @@ describe("strategyExpression", () => {
 				],
 			}),
 		).toBe('close("1h") > 1.5 && (rsi("1h") >= 30 && rsi("1h") <= 70)');
+	});
+
+	it.each([
+		["between", '((close("1h") * 2) >= 1 && (close("1h") * 2) <= 5)'],
+		["notBetween", '((close("1h") * 2) < 1 || (close("1h") * 2) > 5)'],
+	] as const)("writes a %s range of an expression", (operator, expected) => {
+		expect(
+			strategyExpression({
+				combinator: "and",
+				rules: [
+					{
+						field: 'close("1h")',
+						operator,
+						value: ["5", "1"],
+						lhs: {
+							kind: "func",
+							fn: "multiply",
+							args: [
+								{ kind: "field", field: 'close("1h")' },
+								{ kind: "value", value: 2 },
+							],
+						},
+					},
+				],
+			}),
+		).toBe(expected);
 	});
 });
 

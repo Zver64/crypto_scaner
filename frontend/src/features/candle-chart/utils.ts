@@ -44,6 +44,7 @@ import type {
 	ChartCandle,
 	ChartCandleSlot,
 	ChartIndicatorSlot,
+	ChartLegendGroup,
 	ChartLegendItem,
 	ChartLineData,
 	ChartLineShapeData,
@@ -152,7 +153,7 @@ function shapePlace(
 // point before leaves out the join from that point.
 export function createLineShapeData(
 	slots: readonly ChartCandleSlot[],
-	{ color, id, points, title }: ChartLineShape,
+	{ color, id, indicator, points, title }: ChartLineShape,
 	place: ChartShapePlace,
 	priceResolution: ValueResolution,
 	levels: readonly ChartIndicatorLevel[],
@@ -179,6 +180,7 @@ export function createLineShapeData(
 		data,
 		gaps,
 		id,
+		indicator,
 		kind: "line",
 		levels,
 		// Overlays are drawn on the candles' scale, so only other lines have a
@@ -251,7 +253,7 @@ export function areaFillPoints(
 // candles. A marker on a candle the slots do not have is not drawn.
 export function createMarkersShapeData(
 	slots: readonly ChartCandleSlot[],
-	{ color, id, points, position, title }: ChartMarkersShape,
+	{ color, id, indicator, points, position, title }: ChartMarkersShape,
 	place: ChartShapePlace,
 ): ChartMarkersShapeData {
 	const candles = new Set(
@@ -271,6 +273,7 @@ export function createMarkersShapeData(
 		...place,
 		color,
 		id,
+		indicator,
 		kind: "markers",
 		onCandles: [...onCandles].sort((first, second) => first - second),
 		onLine: [...onLine]
@@ -733,47 +736,53 @@ export function nextCandleOpen(
 	return date.toISOString();
 }
 
-// Titles and values of the shapes with a title at one candle slot: a line
-// shows its value there in the color of its point, markers the value of the
-// marker drawn on that candle.
+// Titles and values of the shapes with a title at one candle slot, grouped by
+// their indicators, whose shapes come one after another: a line shows its
+// value there in the color of its point, markers the value of the marker drawn
+// on that candle.
 export function createIndicatorLegend(
 	{ candles, shapes }: Pick<ChartSeriesData, "candles" | "shapes">,
 	slotIndex: number,
-): ChartLegendItem[] {
+): ChartLegendGroup[] {
 	const time = candles[slotIndex]?.time;
-	return shapes.flatMap((shape): ChartLegendItem[] => {
-		if (shape.kind !== "line" && shape.kind !== "markers") return [];
-		const { color, id, placement, title } = shape;
-		const format = (value: number | undefined) =>
-			value === undefined
-				? null
-				: placement === "overlay"
-					? formatPrice(value)
-					: formatNumber(value);
-		if (shape.kind === "markers") {
-			return [
-				{
-					color,
-					key: id,
-					placement,
-					title,
-					value: format(
-						time === undefined ? undefined : shape.values.get(time),
-					),
-				},
-			];
-		}
-		const slot = shape.data[slotIndex];
-		return [
-			{
-				color: (slot && "color" in slot ? slot.color : undefined) ?? color,
-				key: id,
-				placement,
-				title,
-				value: format(slot && "value" in slot ? slot.value : undefined),
-			},
-		];
-	});
+	const groups: { indicator: string; items: ChartLegendItem[] }[] = [];
+	for (const shape of shapes) {
+		if (shape.kind !== "line" && shape.kind !== "markers") continue;
+		const item = legendItem(shape, slotIndex, time);
+		const last = groups.at(-1);
+		if (last?.indicator === shape.indicator) last.items.push(item);
+		else groups.push({ indicator: shape.indicator, items: [item] });
+	}
+	return groups;
+}
+
+function legendItem(
+	shape: ChartLineShapeData | ChartMarkersShapeData,
+	slotIndex: number,
+	time: UTCTimestamp | undefined,
+): ChartLegendItem {
+	const { color, id, placement, title } = shape;
+	const format = (value: number | undefined) =>
+		value === undefined
+			? null
+			: placement === "overlay"
+				? formatPrice(value)
+				: formatNumber(value);
+	if (shape.kind === "markers") {
+		return {
+			color,
+			key: id,
+			title,
+			value: format(time === undefined ? undefined : shape.values.get(time)),
+		};
+	}
+	const slot = shape.data[slotIndex];
+	return {
+		color: (slot && "color" in slot ? slot.color : undefined) ?? color,
+		key: id,
+		title,
+		value: format(slot && "value" in slot ? slot.value : undefined),
+	};
 }
 
 // Fits a scale to the visible values while keeping its levels, such as RSI 30

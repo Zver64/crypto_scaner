@@ -112,6 +112,7 @@ export type ChartShapeData =
 export interface ChartLineShapeData extends ChartShapePlace {
 	kind: "line";
 	id: string;
+	indicator: string;
 	title: string;
 	color: string;
 	// Aligned with the candle slots; a point with a color of its own carries
@@ -135,6 +136,7 @@ export interface ChartAreaShapeData extends ChartShapePlace {
 export interface ChartMarkersShapeData extends ChartShapePlace {
 	kind: "markers";
 	id: string;
+	indicator: string;
 	title: string;
 	color: string;
 	position: ChartMarker["position"];
@@ -218,8 +220,12 @@ export type ChartIndicatorSlot =
 // One entry of the indicator legend over the chart.
 export interface ChartLegendItem {
 	key: string;
-	placement: ChartPlacement;
 	title: string;
 	color: string;
 	value: string | null;
+}
+// The legend entries of one indicator.
+export interface ChartLegendGroup {
+	indicator: string;
+	items: readonly ChartLegendItem[];
 }

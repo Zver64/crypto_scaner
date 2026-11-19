@@ -1090,8 +1090,11 @@ type ChartAreaPoint struct {
 
 // ChartAreaShape A translucent fill between `value` and `base` at each point. Neighbouring points of the same color are joined; a missing point or a change of color breaks it.
 type ChartAreaShape struct {
-	Id   string             `json:"id"`
-	Kind ChartAreaShapeKind `json:"kind"`
+	Id string `json:"id"`
+
+	// Indicator Id of the chart indicator the shape draws; the shapes of one indicator share it.
+	Indicator string             `json:"indicator"`
+	Kind      ChartAreaShapeKind `json:"kind"`
 
 	// Pane Key of the pane of a `pane` shape; absent otherwise.
 	Pane *string `json:"pane,omitempty"`
@@ -1148,9 +1151,12 @@ type ChartLinePoint struct {
 // ChartLineShape A line joining its points in order.
 type ChartLineShape struct {
 	// Color Client theme color token, for example `yellow.5`.
-	Color string             `json:"color"`
-	Id    string             `json:"id"`
-	Kind  ChartLineShapeKind `json:"kind"`
+	Color string `json:"color"`
+	Id    string `json:"id"`
+
+	// Indicator Id of the chart indicator the shape draws; the shapes of one indicator share it.
+	Indicator string             `json:"indicator"`
+	Kind      ChartLineShapeKind `json:"kind"`
 
 	// Pane Key of the pane of a `pane` shape; absent otherwise.
 	Pane *string `json:"pane,omitempty"`
@@ -1184,9 +1190,12 @@ type ChartMarker struct {
 // ChartMarkersShape Points drawn above or below candles, or above or below the values of a line.
 type ChartMarkersShape struct {
 	// Color Client theme color token.
-	Color string                `json:"color"`
-	Id    string                `json:"id"`
-	Kind  ChartMarkersShapeKind `json:"kind"`
+	Color string `json:"color"`
+	Id    string `json:"id"`
+
+	// Indicator Id of the chart indicator the shape draws; the shapes of one indicator share it.
+	Indicator string                `json:"indicator"`
+	Kind      ChartMarkersShapeKind `json:"kind"`
 
 	// Pane Key of the pane of a `pane` shape; absent otherwise.
 	Pane *string `json:"pane,omitempty"`
@@ -1251,9 +1260,12 @@ type ChartSegmentPoint struct {
 // ChartSegmentsShape Straight lines between two points each.
 type ChartSegmentsShape struct {
 	// Color Client theme color token.
-	Color string                 `json:"color"`
-	Id    string                 `json:"id"`
-	Kind  ChartSegmentsShapeKind `json:"kind"`
+	Color string `json:"color"`
+	Id    string `json:"id"`
+
+	// Indicator Id of the chart indicator the shape draws; the shapes of one indicator share it.
+	Indicator string                 `json:"indicator"`
+	Kind      ChartSegmentsShapeKind `json:"kind"`
 
 	// Pane Key of the pane of a `pane` shape; absent otherwise.
 	Pane *string `json:"pane,omitempty"`

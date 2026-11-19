@@ -220,6 +220,7 @@ func (drawers *Drawers) Draw(candles []market.Candle, indicators []Calculated) (
 		shapes := drawer.Draw(canvas)
 		for _, shape := range shapes {
 			shape.ID = item.ID + "/" + shape.ID
+			shape.Indicator = item.ID
 			drawing.Shapes = append(drawing.Shapes, shape)
 		}
 		if len(shapes) == 0 || places[i].Placement != PlacementPane {

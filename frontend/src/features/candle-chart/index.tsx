@@ -137,7 +137,7 @@ export function PriceHistoryChart({
 	const legendSlot = series.candles[legendSlotIndex];
 	const readoutCandle =
 		legendSlot && isChartCandle(legendSlot) ? legendSlot : undefined;
-	const legendItems = createIndicatorLegend(series, legendSlotIndex);
+	const legendGroups = createIndicatorLegend(series, legendSlotIndex);
 	const hasCandles = candles.length > 0;
 	const candleHeight = compact
 		? Math.max(
@@ -263,7 +263,7 @@ export function PriceHistoryChart({
 							/>
 						) : null}
 						{readoutCandle ? <ChartReadout candle={readoutCandle} /> : null}
-						{readoutCandle ? <IndicatorLegend items={legendItems} /> : null}
+						{readoutCandle ? <IndicatorLegend groups={legendGroups} /> : null}
 					</Stack>
 					{isLoading && !hasCandles ? (
 						<Center inset={0} pos="absolute">

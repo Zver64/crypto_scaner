@@ -300,6 +300,7 @@ describe("shape data", () => {
 		...place,
 		color: "blue.5",
 		id,
+		indicator: "0",
 		kind: "line",
 		points,
 		title: id.toUpperCase(),
@@ -346,6 +347,22 @@ describe("shape data", () => {
 		);
 	});
 
+	it("groups the legend by the indicators of its shapes", () => {
+		const { shapes } = series([
+			line("macd", [{ time: at(0), value: 1 }]),
+			line("signal", [{ time: at(0), value: 2 }]),
+			{ ...line("rsi", [{ time: at(0), value: 3 }]), indicator: "1" },
+		]);
+		expect(
+			createIndicatorLegend({ candles: slots, shapes }, 0).map(
+				({ indicator, items }) => [indicator, items.map(({ key }) => key)],
+			),
+		).toEqual([
+			["0", ["macd", "signal"]],
+			["1", ["rsi"]],
+		]);
+	});
+
 	it("aligns a line with the slots and leaves out the joins before its breaks", () => {
 		const [shape] = series([
 			line("supertrend", [
@@ -367,41 +384,37 @@ describe("shape data", () => {
 		expect(
 			times.map(
 				(_, slot) =>
-					createIndicatorLegend({ candles: slots, shapes: [shape] }, slot)[0],
+					createIndicatorLegend({ candles: slots, shapes: [shape] }, slot)[0]
+						?.items[0],
 			),
 		).toEqual([
 			{
 				color: "green.5",
 				key: "supertrend",
-				placement: "pane",
 				title: "SUPERTREND",
 				value: "1",
 			},
 			{
 				color: "green.5",
 				key: "supertrend",
-				placement: "pane",
 				title: "SUPERTREND",
 				value: "2",
 			},
 			{
 				color: "red.5",
 				key: "supertrend",
-				placement: "pane",
 				title: "SUPERTREND",
 				value: "3",
 			},
 			{
 				color: "blue.5",
 				key: "supertrend",
-				placement: "pane",
 				title: "SUPERTREND",
 				value: null,
 			},
 			{
 				color: "blue.5",
 				key: "supertrend",
-				placement: "pane",
 				title: "SUPERTREND",
 				value: "4",
 			},
@@ -412,6 +425,7 @@ describe("shape data", () => {
 		const [shape] = series([
 			{
 				id: "fill",
+				indicator: "0",
 				kind: "area",
 				placement: "overlay",
 				points: [
@@ -435,6 +449,7 @@ describe("shape data", () => {
 		const markers = (points: ChartMarker[]): ChartMarkersShape => ({
 			color: "yellow.5",
 			id: "pivot",
+			indicator: "0",
 			kind: "markers",
 			placement: "overlay",
 			points,
@@ -481,7 +496,7 @@ describe("shape data", () => {
 				times.map(
 					(_, slot) =>
 						createIndicatorLegend({ candles: slots, shapes: [shape] }, slot)[0]
-							?.value,
+							?.items[0]?.value,
 				),
 			).toEqual(["11", null, "12", null, null]);
 		});
@@ -498,6 +513,7 @@ describe("shape data", () => {
 		): ChartSegmentsShape => ({
 			color: "green.5",
 			id: "bull-candles",
+			indicator: "0",
 			kind: "segments",
 			placement: "overlay",
 			segments: items.map(([from, to]) => ({

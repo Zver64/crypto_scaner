@@ -98,6 +98,7 @@ function chart(
 			{
 				kind: "line",
 				id: "rsi",
+				indicator: "0",
 				placement: "pane",
 				pane: "rsi",
 				title: "RSI 14",

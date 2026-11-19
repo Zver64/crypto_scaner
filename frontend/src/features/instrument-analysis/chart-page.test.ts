@@ -31,6 +31,7 @@ function rsi(points: { hour: number; value: number }[]): ChartShape {
 	return {
 		color: "blue.5",
 		id: "rsi",
+		indicator: "0",
 		kind: "line",
 		pane: "rsi",
 		placement: "pane",
@@ -66,6 +67,7 @@ describe("chart page contract", () => {
 				{
 					color: "yellow.5",
 					id: "pivot",
+					indicator: "0",
 					kind: "markers",
 					placement: "overlay",
 					points: [{ calculated_time: time(1), time: time(0), value: 13 }],
@@ -103,6 +105,7 @@ describe("chart tail", () => {
 	const bull: ChartMarkersShape = {
 		color: "green.5",
 		id: "bull",
+		indicator: "0",
 		kind: "markers",
 		pane: "rsi",
 		placement: "pane",
@@ -116,6 +119,7 @@ describe("chart tail", () => {
 	const bullCandles: ChartSegmentsShape = {
 		color: "green.5",
 		id: "bull-candles",
+		indicator: "0",
 		kind: "segments",
 		placement: "overlay",
 		segments: [

@@ -1873,7 +1873,7 @@ components:
     ChartLineShape:
       type: object
       additionalProperties: false
-      required: [kind, id, placement, title, color, points]
+      required: [kind, id, indicator, placement, title, color, points]
       description: A line joining its points in order.
       properties:
         kind:
@@ -1882,6 +1882,10 @@ components:
         id:
           type: string
           minLength: 1
+        indicator:
+          type: string
+          minLength: 1
+          description: Id of the chart indicator the shape draws; the shapes of one indicator share it.
         placement:
           $ref: "#/components/schemas/ChartPlacement"
         pane:
@@ -1919,7 +1923,7 @@ components:
     ChartAreaShape:
       type: object
       additionalProperties: false
-      required: [kind, id, placement, points]
+      required: [kind, id, indicator, placement, points]
       description: >-
         A translucent fill between `value` and `base` at each point. Neighbouring points
         of the same color are joined; a missing point or a change of color breaks it.
@@ -1930,6 +1934,10 @@ components:
         id:
           type: string
           minLength: 1
+        indicator:
+          type: string
+          minLength: 1
+          description: Id of the chart indicator the shape draws; the shapes of one indicator share it.
         placement:
           $ref: "#/components/schemas/ChartPlacement"
         pane:
@@ -1961,7 +1969,7 @@ components:
     ChartMarkersShape:
       type: object
       additionalProperties: false
-      required: [kind, id, placement, title, color, position, points]
+      required: [kind, id, indicator, placement, title, color, position, points]
       description: Points drawn above or below candles, or above or below the values of a line.
       properties:
         kind:
@@ -1970,6 +1978,10 @@ components:
         id:
           type: string
           minLength: 1
+        indicator:
+          type: string
+          minLength: 1
+          description: Id of the chart indicator the shape draws; the shapes of one indicator share it.
         placement:
           $ref: "#/components/schemas/ChartPlacement"
         pane:
@@ -2013,7 +2025,7 @@ components:
     ChartSegmentsShape:
       type: object
       additionalProperties: false
-      required: [kind, id, placement, color, segments]
+      required: [kind, id, indicator, placement, color, segments]
       description: Straight lines between two points each.
       properties:
         kind:
@@ -2022,6 +2034,10 @@ components:
         id:
           type: string
           minLength: 1
+        indicator:
+          type: string
+          minLength: 1
+          description: Id of the chart indicator the shape draws; the shapes of one indicator share it.
         placement:
           $ref: "#/components/schemas/ChartPlacement"
         pane:

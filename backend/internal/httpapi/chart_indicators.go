@@ -67,19 +67,19 @@ func chartShapeDTO(shape chart.Shape) (ChartShape, error) {
 				points[i].Break = &point.Break
 			}
 		}
-		return result, result.FromChartLineShape(ChartLineShape{Id: shape.ID, Placement: placement, Pane: pane, Title: shape.Line.Title, Color: shape.Line.Color, Points: points})
+		return result, result.FromChartLineShape(ChartLineShape{Id: shape.ID, Indicator: shape.Indicator, Placement: placement, Pane: pane, Title: shape.Line.Title, Color: shape.Line.Color, Points: points})
 	case shape.Area != nil:
 		points := make([]ChartAreaPoint, len(shape.Area.Points))
 		for i, point := range shape.Area.Points {
 			points[i] = ChartAreaPoint{Time: point.Time, Value: point.Value, Base: point.Base, Color: point.Color}
 		}
-		return result, result.FromChartAreaShape(ChartAreaShape{Id: shape.ID, Placement: placement, Pane: pane, Points: points})
+		return result, result.FromChartAreaShape(ChartAreaShape{Id: shape.ID, Indicator: shape.Indicator, Placement: placement, Pane: pane, Points: points})
 	case shape.Markers != nil:
 		points := make([]ChartMarker, len(shape.Markers.Points))
 		for i, marker := range shape.Markers.Points {
 			points[i] = ChartMarker{Time: marker.Time, CalculatedTime: marker.Calculated, Value: marker.Value, LineValue: marker.LineValue}
 		}
-		return result, result.FromChartMarkersShape(ChartMarkersShape{Id: shape.ID, Placement: placement, Pane: pane, Title: shape.Markers.Title, Color: shape.Markers.Color,
+		return result, result.FromChartMarkersShape(ChartMarkersShape{Id: shape.ID, Indicator: shape.Indicator, Placement: placement, Pane: pane, Title: shape.Markers.Title, Color: shape.Markers.Color,
 			Position: ChartMarkersShapePosition(shape.Markers.Position), Points: points})
 	case shape.Segments != nil:
 		segments := make([]ChartSegment, len(shape.Segments.Items))
@@ -87,7 +87,7 @@ func chartShapeDTO(shape chart.Shape) (ChartShape, error) {
 			segments[i] = ChartSegment{CalculatedTime: segment.Calculated,
 				From: ChartSegmentPoint{Time: segment.From.Time, Value: segment.From.Value}, To: ChartSegmentPoint{Time: segment.To.Time, Value: segment.To.Value}}
 		}
-		return result, result.FromChartSegmentsShape(ChartSegmentsShape{Id: shape.ID, Placement: placement, Pane: pane, Color: shape.Segments.Color, Segments: segments})
+		return result, result.FromChartSegmentsShape(ChartSegmentsShape{Id: shape.ID, Indicator: shape.Indicator, Placement: placement, Pane: pane, Color: shape.Segments.Color, Segments: segments})
 	}
 	return result, fmt.Errorf("chart shape %q has no figure", shape.ID)
 }

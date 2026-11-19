@@ -22,12 +22,14 @@ var PriceScale = Place{Placement: PlacementOverlay}
 type Shape struct {
 	// ID names the shape within its page; the frames of the same indicators
 	// have the same shapes under the same ids, so a tail frame updates them.
-	ID       string
-	Place    Place
-	Line     *Line
-	Area     *Area
-	Markers  *Markers
-	Segments *Segments
+	ID string
+	// Indicator is the ID of the indicator the shape draws.
+	Indicator string
+	Place     Place
+	Line      *Line
+	Area      *Area
+	Markers   *Markers
+	Segments  *Segments
 }
 
 // Line joins its points in order. Every point is calculated by its own

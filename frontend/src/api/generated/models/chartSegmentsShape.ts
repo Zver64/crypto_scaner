@@ -36,6 +36,11 @@ export interface ChartSegmentsShape {
   kind: ChartSegmentsShapeKind;
   /** @minLength 1 */
   id: string;
+  /**
+     * Id of the chart indicator the shape draws; the shapes of one indicator share it.
+     * @minLength 1
+     */
+  indicator: string;
   placement: ChartPlacement;
   /**
      * Key of the pane of a `pane` shape; absent otherwise.

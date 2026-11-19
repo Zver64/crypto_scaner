@@ -49,10 +49,10 @@ func Connectors(shapes []Shape, candles []market.Candle, times []time.Time) []Sh
 			}
 		}
 		if len(onShape) > 0 {
-			result = append(result, Shape{ID: shape.ID + "-connected", Place: shape.Place, Segments: &Segments{Color: markers.Color, Items: onShape}})
+			result = append(result, Shape{ID: shape.ID + "-connected", Indicator: shape.Indicator, Place: shape.Place, Segments: &Segments{Color: markers.Color, Items: onShape}})
 		}
 		if len(onCandles) > 0 {
-			result = append(result, Shape{ID: shape.ID + "-connected-candles", Place: PriceScale, Segments: &Segments{Color: markers.Color, Items: onCandles}})
+			result = append(result, Shape{ID: shape.ID + "-connected-candles", Indicator: shape.Indicator, Place: PriceScale, Segments: &Segments{Color: markers.Color, Items: onCandles}})
 		}
 	}
 	return result

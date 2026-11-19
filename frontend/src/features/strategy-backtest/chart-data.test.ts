@@ -28,6 +28,7 @@ function chart(interval: "1h" | "1d", length: number): BacktestChart {
 				{
 					kind: "line",
 					id: "rsi",
+					indicator: "0",
 					placement: "pane",
 					pane: "rsi",
 					title: "RSI",

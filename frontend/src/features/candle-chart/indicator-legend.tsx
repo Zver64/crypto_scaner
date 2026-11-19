@@ -1,22 +1,21 @@
-import { Stack } from "@mantine/core";
+import { Flex } from "@mantine/core";
 
-import { IndicatorLegendRow } from "@/features/candle-chart/indicator-legend-row";
-import type { ChartLegendItem } from "@/features/candle-chart/types";
+import { IndicatorLegendGroup } from "@/features/candle-chart/indicator-legend-group";
+import type { ChartLegendGroup } from "@/features/candle-chart/types";
 
 interface IndicatorLegendProps {
-	items: readonly ChartLegendItem[];
+	groups: readonly ChartLegendGroup[];
 }
 
-// Indicator titles and values below the OHLC readout over the chart: overlays drawn on the
-// candles or volumes on one line, indicators in panes below the chart on the next.
-export function IndicatorLegend({ items }: IndicatorLegendProps) {
-	if (items.length === 0) return null;
-	const overlays = items.filter(({ placement }) => placement !== "pane");
-	const panes = items.filter(({ placement }) => placement === "pane");
+// Indicator titles and values below the OHLC readout over the chart, a little
+// apart by indicator.
+export function IndicatorLegend({ groups }: IndicatorLegendProps) {
+	if (groups.length === 0) return null;
 	return (
-		<Stack gap={2}>
-			<IndicatorLegendRow items={overlays} />
-			<IndicatorLegendRow items={panes} />
-		</Stack>
+		<Flex columnGap="sm" rowGap={4} wrap="wrap">
+			{groups.map(({ indicator, items }) => (
+				<IndicatorLegendGroup items={items} key={indicator} />
+			))}
+		</Flex>
 	);
 }

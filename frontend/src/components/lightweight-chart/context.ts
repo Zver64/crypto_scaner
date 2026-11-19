@@ -11,6 +11,9 @@ export interface ChartLifecycle {
 	api(): IChartApi;
 	generation(): number;
 	applyPaneStretchFactors(factors: readonly number[]): void;
+	// Forgets the applied factors, so the next application sets every pane's
+	// factor again, such as after the user dragged a pane's height.
+	forgetPaneStretchFactors(): void;
 	destroy(): void;
 	removeSeries(series: ISeriesApi<SeriesType>): void;
 }

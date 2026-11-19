@@ -22,9 +22,11 @@ import {
 	formatChartTime,
 	formatOhlc,
 	formatPrice,
+	getVisibleMinMax,
 	lineMarkers,
 	lineSeriesData,
 	nextCandleOpen,
+	withMinMaxMarkers,
 } from "@/features/candle-chart/utils";
 
 const from = "2026-08-26T23:00:00Z";
@@ -584,5 +586,48 @@ describe("fitScaleToLevels", () => {
 	it("keeps the visible range of an unbounded indicator", () => {
 		const visible = { priceRange: { maxValue: 2, minValue: -1 } };
 		expect(fitScaleToLevels(visible, { levels: [] })).toEqual(visible);
+	});
+});
+
+describe("visible min and max", () => {
+	const at = (time: number) => time as UTCTimestamp;
+	const slots = [
+		{ close: 5, high: 9, low: 1, open: 5, time: at(1) },
+		{ close: 5, high: 12, low: 4, open: 5, time: at(2) },
+		{ time: at(3) },
+		{ close: 5, high: 8, low: 0.5, open: 5, time: at(4) },
+	];
+	const options = {
+		max: { color: "max", position: "aboveBar", shape: "arrowDown" },
+		min: { color: "min", position: "belowBar", shape: "arrowUp" },
+	} as const;
+
+	it("marks the extremes of the visible candles on their candles, merged with the other markers", () => {
+		const minMax = getVisibleMinMax(slots, { from: 1, to: 3 });
+		expect(minMax).toEqual({
+			max: { price: 12, time: at(2) },
+			min: { price: 0.5, time: at(4) },
+		});
+		if (minMax === null) throw new Error("Missing min and max");
+		const trade = {
+			color: "green",
+			position: "belowBar" as const,
+			shape: "arrowUp" as const,
+			time: at(2),
+		};
+		expect(
+			withMinMaxMarkers([trade], minMax, options, 2).map(
+				({ color, text, time }) => [color, text, time],
+			),
+		).toEqual([
+			["max", "12", at(2)],
+			["green", undefined, at(2)],
+			["min", "0.5", at(4)],
+		]);
+	});
+
+	it("has no extremes without visible candles", () => {
+		expect(getVisibleMinMax(slots, { from: 2, to: 2 })).toBeNull();
+		expect(getVisibleMinMax(slots, null)).toBeNull();
 	});
 });

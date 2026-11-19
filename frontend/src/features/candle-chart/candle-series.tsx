@@ -1,3 +1,4 @@
+import { useComputedColorScheme } from "@mantine/core";
 import { CandlestickSeries, type IRange } from "lightweight-charts";
 
 import { Series, SeriesMarkers } from "@/components/lightweight-chart";
@@ -5,6 +6,7 @@ import { AxisPriceFormat } from "@/features/candle-chart/axis-price-format";
 import {
 	candlePriceScaleOptions,
 	candleSeriesOptions,
+	minMaxMarkerOptions,
 } from "@/features/candle-chart/config";
 import { MinMaxPriceLines } from "@/features/candle-chart/min-max-price-lines";
 import { PriceLevelLines } from "@/features/candle-chart/price-level-lines";
@@ -15,7 +17,11 @@ import type {
 	ChartPriceLevels,
 	ValueResolution,
 } from "@/features/candle-chart/types";
-import { getVisibleMinMax, isChartCandle } from "@/features/candle-chart/utils";
+import {
+	getVisibleMinMax,
+	isChartCandle,
+	withMinMaxMarkers,
+} from "@/features/candle-chart/utils";
 
 interface CandleSeriesProps {
 	// The close of the latest candle, which colors the price level steps.
@@ -38,6 +44,15 @@ export function CandleSeries({
 	visibleRange,
 }: CandleSeriesProps) {
 	const minMax = getVisibleMinMax(data, visibleRange);
+	const markerOptions = minMaxMarkerOptions[useComputedColorScheme("dark")];
+	const shownMarkers = minMax
+		? withMinMaxMarkers(
+				markers,
+				minMax,
+				markerOptions,
+				priceResolution.fractionDigits,
+			)
+		: markers;
 	// The levels are colored by the current price, so they wait for a candle.
 	const shownLevels = currentPrice === undefined ? undefined : priceLevels;
 	return (
@@ -55,14 +70,16 @@ export function CandleSeries({
 			priceScale={candlePriceScaleOptions}
 		>
 			<AxisPriceFormat resolution={priceResolution} />
-			{minMax ? <MinMaxPriceLines max={minMax.max} min={minMax.min} /> : null}
+			{minMax ? (
+				<MinMaxPriceLines max={minMax.max.price} min={minMax.min.price} />
+			) : null}
 			{shownLevels && currentPrice !== undefined ? (
 				<PriceLevelLines
 					currentPrice={currentPrice}
 					levels={shownLevels.levels}
 				/>
 			) : null}
-			{markers ? <SeriesMarkers markers={markers} /> : null}
+			{shownMarkers ? <SeriesMarkers markers={shownMarkers} /> : null}
 		</Series>
 	);
 }

@@ -49,6 +49,8 @@ import type {
 	ChartLineShapeData,
 	ChartMarker,
 	ChartMarkersShapeData,
+	ChartMinMax,
+	ChartMinMaxMarkerOptions,
 	ChartPaneData,
 	ChartPriceLevels,
 	ChartSegmentsShapeData,
@@ -550,19 +552,51 @@ export function createVolumeData(
 export function getVisibleMinMax(
 	data: readonly ChartCandleSlot[],
 	range: IRange<number> | null,
-): { min: number; max: number } | null {
+): ChartMinMax | null {
 	if (range === null) return null;
 	const from = Math.max(0, Math.floor(range.from));
 	const to = Math.min(data.length - 1, Math.ceil(range.to));
-	let min = Number.POSITIVE_INFINITY;
-	let max = Number.NEGATIVE_INFINITY;
+	let minMax: ChartMinMax | null = null;
 	for (let index = from; index <= to; index++) {
 		const candle = data[index];
 		if (!candle || !("low" in candle)) continue;
-		min = Math.min(min, candle.low);
-		max = Math.max(max, candle.high);
+		const { high, low, time } = candle;
+		minMax = {
+			max:
+				minMax === null || high > minMax.max.price
+					? { price: high, time }
+					: minMax.max,
+			min:
+				minMax === null || low < minMax.min.price
+					? { price: low, time }
+					: minMax.min,
+		};
 	}
-	return Number.isFinite(min) && Number.isFinite(max) ? { min, max } : null;
+	return minMax;
+}
+
+// The markers of the candles with the visible minimum and maximum prices
+// marked on their candles, first so they stay next to the candles. One series
+// stacks only the markers of one ascending list, so they are merged.
+export function withMinMaxMarkers(
+	markers: readonly ChartMarker[] | undefined,
+	{ max, min }: ChartMinMax,
+	options: ChartMinMaxMarkerOptions,
+	fractionDigits: number,
+): ChartMarker[] {
+	return [
+		{
+			...options.max,
+			text: formatNumber(max.price, fractionDigits),
+			time: max.time,
+		},
+		{
+			...options.min,
+			text: formatNumber(min.price, fractionDigits),
+			time: min.time,
+		},
+		...(markers ?? []),
+	].sort((first, second) => first.time - second.time);
 }
 
 export function formatPrice(

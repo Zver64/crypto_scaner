@@ -194,6 +194,20 @@ export interface PriceHistoryChartProps {
 export type ChartCandle = CandlestickData<UTCTimestamp>;
 export type ChartCandleSlot = ChartCandle | WhitespaceData<UTCTimestamp>;
 export type ChartMarker = SeriesMarkerBar<UTCTimestamp>;
+// A price of a candle, such as its high.
+export interface ChartPricePoint {
+	price: number;
+	time: UTCTimestamp;
+}
+// The lowest low and the highest high of the visible candles.
+export interface ChartMinMax {
+	max: ChartPricePoint;
+	min: ChartPricePoint;
+}
+export type ChartMinMaxMarkerOptions = Record<
+	keyof ChartMinMax,
+	Omit<ChartMarker, "time">
+>;
 export type ChartVolumeSlot =
 	| HistogramData<UTCTimestamp>
 	| WhitespaceData<UTCTimestamp>;

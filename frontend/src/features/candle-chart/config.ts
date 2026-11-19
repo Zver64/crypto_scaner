@@ -16,6 +16,7 @@ import type {
 	ChartMarkersShapePosition,
 	ChartPlacement,
 } from "@/api/generated/models";
+import type { ChartMinMaxMarkerOptions } from "@/features/candle-chart/types";
 import { resolvedTheme } from "@/theme";
 // Pane heights in pixels. The chart grows by one indicator pane height for
 // every indicator pane, so the candle pane keeps its height. The heights also
@@ -254,3 +255,16 @@ export const minMaxPriceLineOptions = {
 		lineVisible: false,
 	},
 } satisfies Record<ColorScheme, Partial<PriceLineOptions>>;
+
+function minMaxMarkerOptionsFor(color: string) {
+	return {
+		max: { color, position: "aboveBar", shape: "arrowDown" },
+		min: { color, position: "belowBar", shape: "arrowUp" },
+	} satisfies ChartMinMaxMarkerOptions;
+}
+
+// Markers with the visible minimum and maximum prices on their candles.
+export const minMaxMarkerOptions = {
+	dark: minMaxMarkerOptionsFor(schemeColors.dark.text),
+	light: minMaxMarkerOptionsFor(schemeColors.light.text),
+} satisfies Record<ColorScheme, ChartMinMaxMarkerOptions>;

@@ -139,6 +139,7 @@ export const volumePriceScaleOptions = {
 } satisfies DeepPartial<PriceScaleOptions>;
 
 export const overlayIndicatorSeriesOptions = {
+	crosshairMarkerVisible: false,
 	// Moving averages and similar lines should not hide the candles.
 	lineWidth: 1,
 	// The price axis keeps only the candle labels; overlay values are in the
@@ -197,6 +198,7 @@ export const lineGapColor = "transparent";
 export const areaFillOpacity = 0.1;
 
 export const paneIndicatorSeriesOptions = {
+	crosshairMarkerVisible: false,
 	lastValueVisible: true,
 	lineWidth: 2,
 	priceLineVisible: false,

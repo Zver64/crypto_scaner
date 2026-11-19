@@ -1,5 +1,6 @@
 import { Flex, Text } from "@mantine/core";
 
+import { chartFontSize } from "@/features/candle-chart/config";
 import type { ChartLegendItem } from "@/features/candle-chart/types";
 import { useThemeColor } from "@/features/candle-chart/use-theme-color";
 
@@ -16,8 +17,8 @@ export function IndicatorLegendGroup({ items }: IndicatorLegendGroupProps) {
 				<Text
 					c={themeColor(color)}
 					ff="monospace"
-					// Smaller on phones, where the chart has little room.
-					fz={{ base: 10, sm: "xs" }}
+					// The size of the chart's own text.
+					fz={{ base: chartFontSize.compact, sm: chartFontSize.regular }}
 					key={key}
 					size="xs"
 					style={{ whiteSpace: "nowrap" }}

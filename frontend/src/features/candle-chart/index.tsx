@@ -23,6 +23,7 @@ import { ComparisonSeries } from "@/features/candle-chart/comparison-series";
 import {
 	barSpacing,
 	candlePaneHeight,
+	chartFontSize,
 	compactCandlePaneShare,
 	compactIndicatorPaneHeight,
 	indicatorPaneHeight,
@@ -187,6 +188,10 @@ export function PriceHistoryChart({
 						onVisibleLogicalRangeChange={onVisibleLogicalRangeChange}
 						options={{
 							...baseOptions,
+							layout: {
+								...baseOptions.layout,
+								fontSize: chartFontSize[compact ? "compact" : "regular"],
+							},
 							// The left scale belongs to the comparison line.
 							leftPriceScale: {
 								...baseOptions.leftPriceScale,

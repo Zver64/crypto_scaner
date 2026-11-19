@@ -27,6 +27,9 @@ export const indicatorPaneHeight = 50;
 // candlePaneHeight, and use taller indicator panes.
 export const compactCandlePaneShare = 0.45;
 export const compactIndicatorPaneHeight = 70;
+// The font size of the chart's scales and labels, smaller on phones. The
+// library derives the paddings of the scales from it, so it also narrows them.
+export const chartFontSize = { compact: 10, regular: 12 } as const;
 // Request older candles when fewer than this many bars remain on the left.
 export const loadOlderThreshold = 10;
 export const minVisibleBars = 24;

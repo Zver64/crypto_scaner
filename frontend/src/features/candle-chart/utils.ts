@@ -549,6 +549,24 @@ export function createVolumeData(
 	});
 }
 
+// The index of the rightmost visible candle, or of the last candle before the
+// visible range is known; -1 without a candle.
+export function lastVisibleCandleIndex(
+	data: readonly ChartCandleSlot[],
+	range: IRange<number> | null,
+): number {
+	const last = data.length - 1;
+	for (
+		let index = range === null ? last : Math.min(last, Math.floor(range.to));
+		index >= 0;
+		index--
+	) {
+		const slot = data[index];
+		if (slot && "open" in slot) return index;
+	}
+	return -1;
+}
+
 export function getVisibleMinMax(
 	data: readonly ChartCandleSlot[],
 	range: IRange<number> | null,

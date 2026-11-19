@@ -23,6 +23,7 @@ import {
 	formatOhlc,
 	formatPrice,
 	getVisibleMinMax,
+	lastVisibleCandleIndex,
 	lineMarkers,
 	lineSeriesData,
 	nextCandleOpen,
@@ -589,7 +590,7 @@ describe("fitScaleToLevels", () => {
 	});
 });
 
-describe("visible min and max", () => {
+describe("visible candles", () => {
 	const at = (time: number) => time as UTCTimestamp;
 	const slots = [
 		{ close: 5, high: 9, low: 1, open: 5, time: at(1) },
@@ -624,6 +625,12 @@ describe("visible min and max", () => {
 			["green", undefined, at(2)],
 			["min", "0.5", at(4)],
 		]);
+	});
+
+	it("finds the rightmost visible candle, skipping missing candles", () => {
+		expect(lastVisibleCandleIndex(slots, { from: 0, to: 2.6 })).toBe(1);
+		expect(lastVisibleCandleIndex(slots, { from: 0, to: 9 })).toBe(3);
+		expect(lastVisibleCandleIndex(slots, null)).toBe(3);
 	});
 
 	it("has no extremes without visible candles", () => {

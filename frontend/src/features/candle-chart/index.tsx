@@ -49,6 +49,8 @@ import { useThemeColor } from "@/features/candle-chart/use-theme-color";
 import {
 	createCandleMarkers,
 	createIndicatorLegend,
+	isChartCandle,
+	lastVisibleCandleIndex,
 } from "@/features/candle-chart/utils";
 import { VolumeSeries } from "@/features/candle-chart/volume-series";
 
@@ -128,10 +130,13 @@ export function PriceHistoryChart({
 		setActiveCandle(null);
 		setInterval(value);
 	};
-	const readoutCandle = activeCandle ?? candles.at(-1);
+	// The hovered candle, or else the rightmost visible one.
 	const legendSlotIndex = activeCandle
 		? series.candles.findIndex((slot) => slot.time === activeCandle.time)
-		: series.candles.length - 1;
+		: lastVisibleCandleIndex(series.candles, visibleRange);
+	const legendSlot = series.candles[legendSlotIndex];
+	const readoutCandle =
+		legendSlot && isChartCandle(legendSlot) ? legendSlot : undefined;
 	const legendItems = createIndicatorLegend(series, legendSlotIndex);
 	const hasCandles = candles.length > 0;
 	const candleHeight = compact

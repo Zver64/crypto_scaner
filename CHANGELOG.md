@@ -1,5 +1,21 @@
 # Changelog
 
+## [8.1.0](https://github.com/Zver64/crypto_scaner/compare/v8.0.0...v8.1.0) (2026-11-19)
+
+
+### Features
+
+* group the chart legend by indicator ([fa2c08b](https://github.com/Zver64/crypto_scaner/commit/fa2c08bcba3b63e9c5a9e639f7860af119241d39))
+* hide the crosshair markers of indicator lines ([1532bcf](https://github.com/Zver64/crypto_scaner/commit/1532bcf9b1516c3539334deef03ad67d2d4a3a26))
+* mark the visible minimum and maximum prices on their candles ([60d5f5f](https://github.com/Zver64/crypto_scaner/commit/60d5f5f47671acb7c1ae42b2f0b148a82c1090cb))
+* show the rightmost visible candle in the chart readout and legend ([daacaa6](https://github.com/Zver64/crypto_scaner/commit/daacaa65552b03462687bca9a9f64636e869fd34))
+* use a smaller chart font on phones ([333cb09](https://github.com/Zver64/crypto_scaner/commit/333cb09fc924c95d15e385fbe345df85abbdfc02))
+
+
+### Bug Fixes
+
+* keep the dragged chart pane heights and reset them on a double click ([0eb217b](https://github.com/Zver64/crypto_scaner/commit/0eb217b8739aaeee040d0e3a9abe1dd0c71f4c08))
+
 ## [8.0.0](https://github.com/Zver64/crypto_scaner/compare/v7.0.0...v8.0.0) (2026-11-18)
 
 

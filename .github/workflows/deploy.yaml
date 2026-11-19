@@ -12,13 +12,7 @@ permissions:
   contents: read
 
 jobs:
-  quality:
-    uses: ./.github/workflows/ci.yaml
-    permissions:
-      contents: read
-
   release:
-    needs: quality
     permissions:
       contents: write
       issues: write

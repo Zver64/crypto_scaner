@@ -1,15 +1,14 @@
 name: CI
 
-# Pull requests run this directly; pushes to main run it through deploy.yaml
-# (workflow_call) so a release never starts before the checks pass.
+# Runs only on pull requests: main may be briefly red, and a release ships
+# only through the release PR, whose required check is this job.
 on:
   pull_request:
     branches: [main]
-  workflow_call:
 
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
